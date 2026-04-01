@@ -178,6 +178,16 @@ add_executable(${PROJECT_NAME} ${SOURCES} ${IMGUI_SOURCES} ${STB_SOURCES})
 add_dependencies(${PROJECT_NAME} Shaders)
 
 # ----------------------------
+# Copy textures to build folder
+# ----------------------------
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_SOURCE_DIR}/src/client/assets/textures
+        ${CMAKE_BINARY_DIR}/textures
+    COMMENT "Copying textures to build directory"
+)
+
+# ----------------------------
 # Platform-specific target properties
 # ----------------------------
 if(WIN32)

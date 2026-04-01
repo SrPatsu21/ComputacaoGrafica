@@ -10,3 +10,4 @@ build-release
 build-windows-release
 .vscode
 vscode-extensions
+src/client/assets/textures/*
