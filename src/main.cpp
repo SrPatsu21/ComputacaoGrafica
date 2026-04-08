@@ -115,20 +115,56 @@ struct UniformBufferObject {
 };
 
 const std::vector<Vertex> vertices = {
-    {{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-    {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-    {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-    {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
+    // FRONT
+    {{-0.5f, -0.5f,  0.5f}, {1,0,0}, {0,0}},
+    {{ 0.5f, -0.5f,  0.5f}, {0,1,0}, {1,0}},
+    {{ 0.5f,  0.5f,  0.5f}, {0,0,1}, {1,1}},
+    {{-0.5f,  0.5f,  0.5f}, {1,1,1}, {0,1}},
 
-    {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-    {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-    {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-    {{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}
+    // BACK
+    {{-0.5f, -0.5f, -0.5f}, {1,0,0}, {0,0}},
+    {{ 0.5f, -0.5f, -0.5f}, {0,1,0}, {1,0}},
+    {{ 0.5f,  0.5f, -0.5f}, {0,0,1}, {1,1}},
+    {{-0.5f,  0.5f, -0.5f}, {1,1,1}, {0,1}},
+
+    // LEFT
+    {{-0.5f, -0.5f, -0.5f}, {1,0,0}, {0,0}},
+    {{-0.5f, -0.5f,  0.5f}, {0,1,0}, {1,0}},
+    {{-0.5f,  0.5f,  0.5f}, {0,0,1}, {1,1}},
+    {{-0.5f,  0.5f, -0.5f}, {1,1,1}, {0,1}},
+
+    // RIGHT
+    {{0.5f, -0.5f, -0.5f}, {1,0,0}, {0,0}},
+    {{0.5f, -0.5f,  0.5f}, {0,1,0}, {1,0}},
+    {{0.5f,  0.5f,  0.5f}, {0,0,1}, {1,1}},
+    {{0.5f,  0.5f, -0.5f}, {1,1,1}, {0,1}},
+
+    // TOP
+    {{-0.5f, 0.5f, -0.5f}, {1,0,0}, {0,0}},
+    {{ 0.5f, 0.5f, -0.5f}, {0,1,0}, {1,0}},
+    {{ 0.5f, 0.5f,  0.5f}, {0,0,1}, {1,1}},
+    {{-0.5f, 0.5f,  0.5f}, {1,1,1}, {0,1}},
+
+    // BOTTOM
+    {{-0.5f, -0.5f, -0.5f}, {1,0,0}, {0,0}},
+    {{ 0.5f, -0.5f, -0.5f}, {0,1,0}, {1,0}},
+    {{ 0.5f, -0.5f,  0.5f}, {0,0,1}, {1,1}},
+    {{-0.5f, -0.5f,  0.5f}, {1,1,1}, {0,1}},
 };
 
 const std::vector<uint16_t> indices = {
+    // FRONT
     0, 1, 2, 2, 3, 0,
-    4, 5, 6, 6, 7, 4
+    // BACK (invertido!)
+    4, 6, 5, 6, 4, 7,
+    // LEFT
+    8, 9,10,10,11, 8,
+    // RIGHT (invertido!)
+    12,14,13,14,12,15,
+    // TOP
+    16,17,18,18,19,16,
+    // BOTTOM (invertido!)
+    20,22,21,22,20,23
 };
 
 class HelloTriangleApplication {
@@ -197,6 +233,14 @@ private:
 
     bool framebufferResized = false;
 
+    float posX = 0.0f;
+    float posY = 0.0f;
+
+    float rotX = 0.0f;
+    float rotY = 0.0f;
+
+    float scale = 1.0f;
+
     void initWindow() {
         glfwInit();
 
@@ -241,6 +285,7 @@ private:
     void mainLoop() {
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents();
+            processInput();
             drawFrame();
         }
 
@@ -654,7 +699,7 @@ private:
         rasterizer.rasterizerDiscardEnable = VK_FALSE;
         rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
         rasterizer.lineWidth = 1.0f;
-        rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+        rasterizer.cullMode = VK_CULL_MODE_NONE;
         rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
         rasterizer.depthBiasEnable = VK_FALSE;
 
@@ -1254,6 +1299,29 @@ private:
         }
     }
 
+    void processInput() {
+        float moveSpeed = 0.01f;
+        float rotSpeed = 0.02f;
+        float scaleSpeed = 0.01f;
+
+        // Movimento (WASD)
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) posY += moveSpeed;
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) posY -= moveSpeed;
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) posX -= moveSpeed;
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) posX += moveSpeed;
+
+        // Rotação com setas
+        if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS)    rotX += rotSpeed;
+        if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS)  rotX -= rotSpeed;
+        if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)  rotY += rotSpeed;
+        if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) rotY -= rotSpeed;
+
+        // Escala
+        if (glfwGetKey(window, GLFW_KEY_Z) == GLFW_PRESS) scale += scaleSpeed;
+        if (glfwGetKey(window, GLFW_KEY_X) == GLFW_PRESS) scale -= scaleSpeed;
+        if (scale < 0.1f) scale = 0.1f;
+    }
+
     void createSyncObjects() {
         imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
         renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
@@ -1279,12 +1347,31 @@ private:
         static auto startTime = std::chrono::high_resolution_clock::now();
 
         auto currentTime = std::chrono::high_resolution_clock::now();
-        float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+        float time = std::chrono::duration<float>(currentTime - startTime).count();
 
         UniformBufferObject ubo{};
-        ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-        ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-        ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float) swapChainExtent.height, 0.1f, 10.0f);
+
+        glm::mat4 model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(posX, posY, 0.0f));
+        model = glm::rotate(model, rotX, glm::vec3(1.0f, 0.0f, 0.0f)); // eixo X
+        model = glm::rotate(model, rotY, glm::vec3(0.0f, 1.0f, 0.0f)); // eixo Y
+        model = glm::scale(model, glm::vec3(scale, scale, scale));
+
+        ubo.model = model;
+
+        ubo.view = glm::lookAt(
+            glm::vec3(2.0f, 2.0f, 2.0f),
+            glm::vec3(0.0f, 0.0f, 0.0f),
+            glm::vec3(0.0f, 0.0f, 1.0f)
+        );
+
+        ubo.proj = glm::perspective(
+            glm::radians(45.0f),
+            swapChainExtent.width / (float) swapChainExtent.height,
+            0.1f,
+            10.0f
+        );
+
         ubo.proj[1][1] *= -1;
 
         memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
