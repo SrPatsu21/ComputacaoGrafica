@@ -24,6 +24,7 @@
 
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
+const uint32_t MAX_OBJECTS = 100;
 
 const int MAX_FRAMES_IN_FLIGHT = 2;
 
@@ -109,67 +110,76 @@ struct Vertex {
 };
 
 struct UniformBufferObject {
-    alignas(16) glm::mat4 model;
+    alignas(16) glm::mat4 model[MAX_OBJECTS];
     alignas(16) glm::mat4 view;
     alignas(16) glm::mat4 proj;
 };
 
-const std::vector<Vertex> vertices = {
+std::vector<Vertex> vertices = {
     // FRONT
     {{-0.5f, -0.5f,  0.5f}, {1,0,0}, {0,0}},
     {{ 0.5f, -0.5f,  0.5f}, {0,1,0}, {1,0}},
     {{ 0.5f,  0.5f,  0.5f}, {0,0,1}, {1,1}},
     {{-0.5f,  0.5f,  0.5f}, {1,1,1}, {0,1}},
 
-    // BACK
-    {{-0.5f, -0.5f, -0.5f}, {1,0,0}, {0,0}},
-    {{ 0.5f, -0.5f, -0.5f}, {0,1,0}, {1,0}},
-    {{ 0.5f,  0.5f, -0.5f}, {0,0,1}, {1,1}},
-    {{-0.5f,  0.5f, -0.5f}, {1,1,1}, {0,1}},
+    // // BACK
+    // {{-0.5f, -0.5f, -0.5f}, {1,0,0}, {0,0}},
+    // {{ 0.5f, -0.5f, -0.5f}, {0,1,0}, {1,0}},
+    // {{ 0.5f,  0.5f, -0.5f}, {0,0,1}, {1,1}},
+    // {{-0.5f,  0.5f, -0.5f}, {1,1,1}, {0,1}},
 
-    // LEFT
-    {{-0.5f, -0.5f, -0.5f}, {1,0,0}, {0,0}},
-    {{-0.5f, -0.5f,  0.5f}, {0,1,0}, {1,0}},
-    {{-0.5f,  0.5f,  0.5f}, {0,0,1}, {1,1}},
-    {{-0.5f,  0.5f, -0.5f}, {1,1,1}, {0,1}},
+    // // LEFT
+    // {{-0.5f, -0.5f, -0.5f}, {1,0,0}, {0,0}},
+    // {{-0.5f, -0.5f,  0.5f}, {0,1,0}, {1,0}},
+    // {{-0.5f,  0.5f,  0.5f}, {0,0,1}, {1,1}},
+    // {{-0.5f,  0.5f, -0.5f}, {1,1,1}, {0,1}},
 
-    // RIGHT
-    {{0.5f, -0.5f, -0.5f}, {1,0,0}, {0,0}},
-    {{0.5f, -0.5f,  0.5f}, {0,1,0}, {1,0}},
-    {{0.5f,  0.5f,  0.5f}, {0,0,1}, {1,1}},
-    {{0.5f,  0.5f, -0.5f}, {1,1,1}, {0,1}},
+    // // RIGHT
+    // {{0.5f, -0.5f, -0.5f}, {1,0,0}, {0,0}},
+    // {{0.5f, -0.5f,  0.5f}, {0,1,0}, {1,0}},
+    // {{0.5f,  0.5f,  0.5f}, {0,0,1}, {1,1}},
+    // {{0.5f,  0.5f, -0.5f}, {1,1,1}, {0,1}},
 
-    // TOP
-    {{-0.5f, 0.5f, -0.5f}, {1,0,0}, {0,0}},
-    {{ 0.5f, 0.5f, -0.5f}, {0,1,0}, {1,0}},
-    {{ 0.5f, 0.5f,  0.5f}, {0,0,1}, {1,1}},
-    {{-0.5f, 0.5f,  0.5f}, {1,1,1}, {0,1}},
+    // // TOP
+    // {{-0.5f, 0.5f, -0.5f}, {1,0,0}, {0,0}},
+    // {{ 0.5f, 0.5f, -0.5f}, {0,1,0}, {1,0}},
+    // {{ 0.5f, 0.5f,  0.5f}, {0,0,1}, {1,1}},
+    // {{-0.5f, 0.5f,  0.5f}, {1,1,1}, {0,1}},
 
-    // BOTTOM
-    {{-0.5f, -0.5f, -0.5f}, {1,0,0}, {0,0}},
-    {{ 0.5f, -0.5f, -0.5f}, {0,1,0}, {1,0}},
-    {{ 0.5f, -0.5f,  0.5f}, {0,0,1}, {1,1}},
-    {{-0.5f, -0.5f,  0.5f}, {1,1,1}, {0,1}},
+    // // BOTTOM
+    // {{-0.5f, -0.5f, -0.5f}, {1,0,0}, {0,0}},
+    // {{ 0.5f, -0.5f, -0.5f}, {0,1,0}, {1,0}},
+    // {{ 0.5f, -0.5f,  0.5f}, {0,0,1}, {1,1}},
+    // {{-0.5f, -0.5f,  0.5f}, {1,1,1}, {0,1}},
 };
 
 const std::vector<uint16_t> indices = {
     // FRONT
     0, 1, 2, 2, 3, 0,
     // BACK (invertido!)
-    4, 6, 5, 6, 4, 7,
+    // 4, 6, 5, 6, 4, 7,
     // LEFT
-    8, 9,10,10,11, 8,
+    // 8, 9,10,10,11, 8,
     // RIGHT (invertido!)
-    12,14,13,14,12,15,
+    // 12,14,13,14,12,15,
     // TOP
-    16,17,18,18,19,16,
+    // 16,17,18,18,19,16,
     // BOTTOM (invertido!)
-    20,22,21,22,20,23
+    // 20,22,21,22,20,23
 };
 
 class HelloTriangleApplication {
 public:
     void run() {
+        posX[0] = 0.0f;
+        posY[0] = 0.0f;
+        posZ[0] = 0.0f;
+
+        rotX[0] = 0.0f;
+        rotY[0] = 0.0f;
+
+        scale[0] = 1.0f;
+
         initWindow();
         initVulkan();
         mainLoop();
@@ -233,13 +243,16 @@ private:
 
     bool framebufferResized = false;
 
-    float posX = 0.0f;
-    float posY = 0.0f;
+    float posX[MAX_OBJECTS];
+    float posY[MAX_OBJECTS];
+    float posZ[MAX_OBJECTS];
 
-    float rotX = 0.0f;
-    float rotY = 0.0f;
+    float rotX[MAX_OBJECTS];
+    float rotY[MAX_OBJECTS];
 
-    float scale = 1.0f;
+    float scale[MAX_OBJECTS];
+
+    UniformBufferObject ubo{};
 
     void initWindow() {
         glfwInit();
@@ -1048,6 +1061,30 @@ private:
         vkFreeMemory(device, stagingBufferMemory, nullptr);
     }
 
+    void UpdateVertexBuffer(){
+        VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
+
+        VkBuffer stagingBuffer;
+        VkDeviceMemory stagingBufferMemory;
+        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+
+        void* data;
+        vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
+        memcpy(data, vertices.data(), (size_t) bufferSize);
+        vkUnmapMemory(device, stagingBufferMemory);
+
+        copyBuffer(stagingBuffer, vertexBuffer, bufferSize);
+
+        vkDestroyBuffer(device, stagingBuffer, nullptr);
+        vkFreeMemory(device, stagingBufferMemory, nullptr);
+        std::cout << "updatebuffer" << std::endl;
+        for (size_t i = 0; i < vertices.size(); i++)
+        {
+            std::cout << i << " " << vertices[i].pos.x << "," << vertices[i].pos.y << "," << vertices[i].pos.z << std::endl;
+        }
+        
+    }
+
     void createIndexBuffer() {
         VkDeviceSize bufferSize = sizeof(indices[0]) * indices.size();
 
@@ -1289,8 +1326,8 @@ private:
             vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT16);
 
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[currentFrame], 0, nullptr);
-
-            vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
+            int quantidade = 1;
+            vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()), quantidade, 0, 0, 0);
 
         vkCmdEndRenderPass(commandBuffer);
 
@@ -1305,21 +1342,92 @@ private:
         float scaleSpeed = 0.01f;
 
         // Movimento (WASD)
-        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) posY += moveSpeed;
-        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) posY -= moveSpeed;
-        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) posX -= moveSpeed;
-        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) posX += moveSpeed;
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) posY[0] += moveSpeed;
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) posY[0] -= moveSpeed;
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) posX[0] -= moveSpeed;
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) posX[0] += moveSpeed;
 
         // Rotação com setas
-        if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS)    rotX += rotSpeed;
-        if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS)  rotX -= rotSpeed;
-        if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)  rotY += rotSpeed;
-        if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) rotY -= rotSpeed;
+        if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS)    rotX[0] += rotSpeed;
+        if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS)  rotX[0] -= rotSpeed;
+        if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)  rotY[0] += rotSpeed;
+        if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) rotY[0] -= rotSpeed;
 
         // Escala
-        if (glfwGetKey(window, GLFW_KEY_Z) == GLFW_PRESS) scale += scaleSpeed;
-        if (glfwGetKey(window, GLFW_KEY_X) == GLFW_PRESS) scale -= scaleSpeed;
-        if (scale < 0.1f) scale = 0.1f;
+        if (glfwGetKey(window, GLFW_KEY_Z) == GLFW_PRESS) scale[0] += scaleSpeed;
+        if (glfwGetKey(window, GLFW_KEY_X) == GLFW_PRESS) scale[0] -= scaleSpeed;
+        if (scale[0] < 0.1f) scale[0] = 0.1f;
+
+        // mouse
+        if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS)
+        {
+            double mouseX, mouseY;
+            glfwGetCursorPos(window, &mouseX, &mouseY);
+
+            int width, height;
+            glfwGetWindowSize(window, &width, &height);
+
+            // std::cout << "Click em: " << mouseX << ", " << mouseY << std::endl;
+            // cordenada da tela
+            float normX = (2.0f * mouseX) / width - 1.0f;
+            float normY = 1.0f - (2.0f * mouseY) / height;
+
+            // vetor de espaco do ponto
+            glm::vec3 ray_nds = glm::vec3(normX, -normY, 0);
+
+            // vetor de direcao (Z = -1)
+            glm::vec4 ray_clip = glm::vec4(ray_nds.x, ray_nds.y, -1.0f, 1.0f);
+
+            // converte para espaco de camera
+            glm::vec4 ray_eye = glm::inverse(ubo.proj) * ray_clip;
+
+            // transformar em vetor de direção
+            ray_eye = glm::vec4(ray_eye.x, ray_eye.y, -1.0f, 0.0f);
+
+            // direcao do raio
+            glm::vec3 ray_world = glm::normalize(glm::vec3(glm::inverse(ubo.view) * ray_eye));
+
+            // posicao da camera mesma do view
+            glm::vec3 camPos = glm::vec3(0.0f, 0.0f, 5.0f);
+
+            // calcula a posicao no mundo
+            float t = -camPos.z / ray_world.z;
+            glm::vec3 worldPos = camPos + t * ray_world;
+
+            // if (posX[0]+0.5 >= worldPos.x && posX[0]-0.5 <= worldPos.x){
+            //     if (posY[0]+0.5 >= worldPos.y && posY[0]-0.5 <= worldPos.y){
+            //         posX[0] = worldPos.x;
+            //         posY[0] = worldPos.y;
+            //     }
+            // }
+
+
+            for (size_t i = 0; i < vertices.size(); i++){
+                if ((posX[0]+vertices[i].pos.x+0.2) >= worldPos.x && (posX[0]+vertices[i].pos.x-0.2) <= worldPos.x){
+                    if ((posY[0]+vertices[i].pos.y+0.2) >= worldPos.y && (posY[0]+vertices[i].pos.y-0.2) <= worldPos.y){
+                        vertices[i].pos.x = worldPos.x-posX[0];
+                        vertices[i].pos.y = worldPos.y-posY[0];
+                        std::cout << "HIT" << std::endl;
+                    }
+                }
+            }
+            // for(auto vert : vertices){
+            //     if ((posX[0]+vert.pos.x+0.2) >= worldPos.x && (posX[0]+vert.pos.x-0.2) <= worldPos.x){
+            //         if ((posY[0]+vert.pos.y+0.2) >= worldPos.y && (posY[0]+vert.pos.y-0.2) <= worldPos.y){
+            //             vert.pos.x += worldPos.x-posX[0];
+            //             vert.pos.y += worldPos.y-posY[0];
+            //             std::cout << "HIT" << std::endl;
+            //         }
+            //     }
+            // }
+
+            // vertices;
+
+            //std::cout << "NDC: " << normX << ", " << normY << std::endl;
+
+            // se isso funcionar pqp sou foda
+            UpdateVertexBuffer();
+        }
     }
 
     void createSyncObjects() {
@@ -1349,20 +1457,18 @@ private:
         auto currentTime = std::chrono::high_resolution_clock::now();
         float time = std::chrono::duration<float>(currentTime - startTime).count();
 
-        UniformBufferObject ubo{};
-
         glm::mat4 model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(posX, posY, 0.0f));
-        model = glm::rotate(model, rotX, glm::vec3(1.0f, 0.0f, 0.0f)); // eixo X
-        model = glm::rotate(model, rotY, glm::vec3(0.0f, 1.0f, 0.0f)); // eixo Y
-        model = glm::scale(model, glm::vec3(scale, scale, scale));
+        model = glm::translate(model, glm::vec3(posX[0], posY[0], posZ[0]));
+        model = glm::rotate(model, rotX[0], glm::vec3(1.0f, 0.0f, 0.0f)); // eixo X
+        model = glm::rotate(model, rotY[0], glm::vec3(0.0f, 1.0f, 0.0f)); // eixo Y
+        model = glm::scale(model, glm::vec3(scale[0], scale[0], scale[0]));
 
-        ubo.model = model;
+        ubo.model[0] = model;
 
         ubo.view = glm::lookAt(
-            glm::vec3(2.0f, 2.0f, 2.0f),
-            glm::vec3(0.0f, 0.0f, 0.0f),
-            glm::vec3(0.0f, 0.0f, 1.0f)
+            glm::vec3(0.0f, 0.0f, 5.0f),  // câmera acima
+            glm::vec3(0.0f, 0.0f, 0.0f),  // olhando para o centro
+            glm::vec3(0.0f, 1.0f, 0.0f)   // "up" no eixo Y
         );
 
         ubo.proj = glm::perspective(
