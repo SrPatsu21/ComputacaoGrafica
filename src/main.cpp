@@ -116,56 +116,20 @@ struct UniformBufferObject {
 };
 
 std::vector<Vertex> vertices = {
-    // FRONT
-    {{-0.5f, -0.5f,  0.5f}, {1,0,0}, {0,0}},
-    {{ 0.5f, -0.5f,  0.5f}, {0,1,0}, {1,0}},
-    {{ 0.5f,  0.5f,  0.5f}, {0,0,1}, {1,1}},
-    {{-0.5f,  0.5f,  0.5f}, {1,1,1}, {0,1}},
-
-    // // BACK
-    // {{-0.5f, -0.5f, -0.5f}, {1,0,0}, {0,0}},
-    // {{ 0.5f, -0.5f, -0.5f}, {0,1,0}, {1,0}},
-    // {{ 0.5f,  0.5f, -0.5f}, {0,0,1}, {1,1}},
-    // {{-0.5f,  0.5f, -0.5f}, {1,1,1}, {0,1}},
-
-    // // LEFT
-    // {{-0.5f, -0.5f, -0.5f}, {1,0,0}, {0,0}},
-    // {{-0.5f, -0.5f,  0.5f}, {0,1,0}, {1,0}},
-    // {{-0.5f,  0.5f,  0.5f}, {0,0,1}, {1,1}},
-    // {{-0.5f,  0.5f, -0.5f}, {1,1,1}, {0,1}},
-
-    // // RIGHT
-    // {{0.5f, -0.5f, -0.5f}, {1,0,0}, {0,0}},
-    // {{0.5f, -0.5f,  0.5f}, {0,1,0}, {1,0}},
-    // {{0.5f,  0.5f,  0.5f}, {0,0,1}, {1,1}},
-    // {{0.5f,  0.5f, -0.5f}, {1,1,1}, {0,1}},
-
-    // // TOP
-    // {{-0.5f, 0.5f, -0.5f}, {1,0,0}, {0,0}},
-    // {{ 0.5f, 0.5f, -0.5f}, {0,1,0}, {1,0}},
-    // {{ 0.5f, 0.5f,  0.5f}, {0,0,1}, {1,1}},
-    // {{-0.5f, 0.5f,  0.5f}, {1,1,1}, {0,1}},
-
-    // // BOTTOM
-    // {{-0.5f, -0.5f, -0.5f}, {1,0,0}, {0,0}},
-    // {{ 0.5f, -0.5f, -0.5f}, {0,1,0}, {1,0}},
-    // {{ 0.5f, -0.5f,  0.5f}, {0,0,1}, {1,1}},
-    // {{-0.5f, -0.5f,  0.5f}, {1,1,1}, {0,1}},
+    {{ 0.0f,  0.5f, 0.0f}, {1, 0, 0}, {0.5f, 1}}, // topo
+    {{-0.3f, -0.5f, 0.0f}, {0, 1, 0}, {0, 0}}, // esquerda
+    {{ 0.0f, -0.5f, -0.3f}, {0, 1, 0}, {0, 0}}, // atras
+    {{ 0.3f, -0.5f, 0.0f}, {0, 0, 1}, {0, 0}}, // direita
+    {{ 0.0f, -0.5f, 0.3f}, {0, 0, 1}, {0, 0}} // frente
 };
 
 const std::vector<uint16_t> indices = {
-    // FRONT
-    0, 1, 2, 2, 3, 0,
-    // BACK (invertido!)
-    // 4, 6, 5, 6, 4, 7,
-    // LEFT
-    // 8, 9,10,10,11, 8,
-    // RIGHT (invertido!)
-    // 12,14,13,14,12,15,
-    // TOP
-    // 16,17,18,18,19,16,
-    // BOTTOM (invertido!)
-    // 20,22,21,22,20,23
+    0, 1, 2,
+    0, 2, 3,
+    0, 3, 4,
+    0, 4, 1,
+    1, 2, 3,
+    3, 1, 4
 };
 
 class HelloTriangleApplication {
@@ -249,6 +213,7 @@ private:
 
     float rotX[MAX_OBJECTS];
     float rotY[MAX_OBJECTS];
+    float rotZ[MAX_OBJECTS];
 
     float scale[MAX_OBJECTS];
 
@@ -1341,17 +1306,66 @@ private:
         float rotSpeed = 0.02f;
         float scaleSpeed = 0.01f;
 
+        // forward base
+        float fx = 0.0f;
+        float fy = 1.0f;
+        float fz = 0.0f;
+
+        // rotações
+        float cx = cos(rotX[0]);
+        float sx = sin(rotX[0]);
+        float cz = cos(rotZ[0]);
+        float sz = sin(rotZ[0]);
+
+        // 1. yaw (Z)
+        float fx1 = fx * cz - fy * sz;
+        float fy1 = fx * sz + fy * cz;
+        float fz1 = fz;
+
+        // 2. pitch (X)
+        float fx2 = fx1;
+        float fy2 = fy1 * cx - fz1 * sx;
+        float fz2 = fy1 * sx + fz1 * cx;
+
+        // final
+        float dx = fx2;
+        float dy = fy2;
+        float dz = fz2;
+
         // Movimento (WASD)
-        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) posY[0] += moveSpeed;
-        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) posY[0] -= moveSpeed;
-        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) posX[0] -= moveSpeed;
-        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) posX[0] += moveSpeed;
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
+            posX[0] += dx * moveSpeed;
+            posY[0] += dy * moveSpeed;
+            posZ[0] += dz * moveSpeed;
+
+            std::cout << "pos: (" << posX[0] << "," << posY[0] << "," << posZ[0] << ")";
+        }
+        // Movimento (WASD)
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
+            posX[0] -= dx * moveSpeed;
+            posY[0] -= dy * moveSpeed;
+            posZ[0] -= dz * moveSpeed;
+        }
+        float rx =  cos(rotZ[0]);
+        float ry =  sin(rotZ[0]);
+        float rz =  0.0f;
+
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
+            posX[0] -= rx * moveSpeed*0.2;
+            posY[0] -= ry * moveSpeed*0.2;
+            posZ[0] -= rz * moveSpeed*0.2;
+        }
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
+            posX[0] += rx * moveSpeed*0.2;
+            posY[0] += ry * moveSpeed*0.2;
+            posZ[0] += rz * moveSpeed*0.2;
+        }
 
         // Rotação com setas
         if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS)    rotX[0] += rotSpeed;
         if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS)  rotX[0] -= rotSpeed;
-        if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)  rotY[0] += rotSpeed;
-        if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) rotY[0] -= rotSpeed;
+        if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)  rotZ[0] += rotSpeed;
+        if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) rotZ[0] -= rotSpeed;
 
         // Escala
         if (glfwGetKey(window, GLFW_KEY_Z) == GLFW_PRESS) scale[0] += scaleSpeed;
@@ -1359,75 +1373,75 @@ private:
         if (scale[0] < 0.1f) scale[0] = 0.1f;
 
         // mouse
-        if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS)
-        {
-            double mouseX, mouseY;
-            glfwGetCursorPos(window, &mouseX, &mouseY);
+        // if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS)
+        // {
+        //     double mouseX, mouseY;
+        //     glfwGetCursorPos(window, &mouseX, &mouseY);
 
-            int width, height;
-            glfwGetWindowSize(window, &width, &height);
+        //     int width, height;
+        //     glfwGetWindowSize(window, &width, &height);
 
-            // std::cout << "Click em: " << mouseX << ", " << mouseY << std::endl;
-            // cordenada da tela
-            float normX = (2.0f * mouseX) / width - 1.0f;
-            float normY = 1.0f - (2.0f * mouseY) / height;
+        //     // std::cout << "Click em: " << mouseX << ", " << mouseY << std::endl;
+        //     // cordenada da tela
+        //     float normX = (2.0f * mouseX) / width - 1.0f;
+        //     float normY = 1.0f - (2.0f * mouseY) / height;
 
-            // vetor de espaco do ponto
-            glm::vec3 ray_nds = glm::vec3(normX, -normY, 0);
+        //     // vetor de espaco do ponto
+        //     glm::vec3 ray_nds = glm::vec3(normX, -normY, 0);
 
-            // vetor de direcao (Z = -1)
-            glm::vec4 ray_clip = glm::vec4(ray_nds.x, ray_nds.y, -1.0f, 1.0f);
+        //     // vetor de direcao (Z = -1)
+        //     glm::vec4 ray_clip = glm::vec4(ray_nds.x, ray_nds.y, -1.0f, 1.0f);
 
-            // converte para espaco de camera
-            glm::vec4 ray_eye = glm::inverse(ubo.proj) * ray_clip;
+        //     // converte para espaco de camera
+        //     glm::vec4 ray_eye = glm::inverse(ubo.proj) * ray_clip;
 
-            // transformar em vetor de direção
-            ray_eye = glm::vec4(ray_eye.x, ray_eye.y, -1.0f, 0.0f);
+        //     // transformar em vetor de direção
+        //     ray_eye = glm::vec4(ray_eye.x, ray_eye.y, -1.0f, 0.0f);
 
-            // direcao do raio
-            glm::vec3 ray_world = glm::normalize(glm::vec3(glm::inverse(ubo.view) * ray_eye));
+        //     // direcao do raio
+        //     glm::vec3 ray_world = glm::normalize(glm::vec3(glm::inverse(ubo.view) * ray_eye));
 
-            // posicao da camera mesma do view
-            glm::vec3 camPos = glm::vec3(0.0f, 0.0f, 5.0f);
+        //     // posicao da camera mesma do view
+        //     glm::vec3 camPos = glm::vec3(0.0f, 0.0f, 5.0f);
 
-            // calcula a posicao no mundo
-            float t = -camPos.z / ray_world.z;
-            glm::vec3 worldPos = camPos + t * ray_world;
+        //     // calcula a posicao no mundo
+        //     float t = -camPos.z / ray_world.z;
+        //     glm::vec3 worldPos = camPos + t * ray_world;
 
-            // if (posX[0]+0.5 >= worldPos.x && posX[0]-0.5 <= worldPos.x){
-            //     if (posY[0]+0.5 >= worldPos.y && posY[0]-0.5 <= worldPos.y){
-            //         posX[0] = worldPos.x;
-            //         posY[0] = worldPos.y;
-            //     }
-            // }
+        //     // if (posX[0]+0.5 >= worldPos.x && posX[0]-0.5 <= worldPos.x){
+        //     //     if (posY[0]+0.5 >= worldPos.y && posY[0]-0.5 <= worldPos.y){
+        //     //         posX[0] = worldPos.x;
+        //     //         posY[0] = worldPos.y;
+        //     //     }
+        //     // }
 
 
-            for (size_t i = 0; i < vertices.size(); i++){
-                if ((posX[0]+vertices[i].pos.x+0.2) >= worldPos.x && (posX[0]+vertices[i].pos.x-0.2) <= worldPos.x){
-                    if ((posY[0]+vertices[i].pos.y+0.2) >= worldPos.y && (posY[0]+vertices[i].pos.y-0.2) <= worldPos.y){
-                        vertices[i].pos.x = worldPos.x-posX[0];
-                        vertices[i].pos.y = worldPos.y-posY[0];
-                        std::cout << "HIT" << std::endl;
-                    }
-                }
-            }
-            // for(auto vert : vertices){
-            //     if ((posX[0]+vert.pos.x+0.2) >= worldPos.x && (posX[0]+vert.pos.x-0.2) <= worldPos.x){
-            //         if ((posY[0]+vert.pos.y+0.2) >= worldPos.y && (posY[0]+vert.pos.y-0.2) <= worldPos.y){
-            //             vert.pos.x += worldPos.x-posX[0];
-            //             vert.pos.y += worldPos.y-posY[0];
-            //             std::cout << "HIT" << std::endl;
-            //         }
-            //     }
-            // }
+        //     for (size_t i = 0; i < vertices.size(); i++){
+        //         if ((posX[0]+vertices[i].pos.x+0.2) >= worldPos.x && (posX[0]+vertices[i].pos.x-0.2) <= worldPos.x){
+        //             if ((posY[0]+vertices[i].pos.y+0.2) >= worldPos.y && (posY[0]+vertices[i].pos.y-0.2) <= worldPos.y){
+        //                 vertices[i].pos.x = worldPos.x-posX[0];
+        //                 vertices[i].pos.y = worldPos.y-posY[0];
+        //                 std::cout << "HIT" << std::endl;
+        //             }
+        //         }
+        //     }
+        //     // for(auto vert : vertices){
+        //     //     if ((posX[0]+vert.pos.x+0.2) >= worldPos.x && (posX[0]+vert.pos.x-0.2) <= worldPos.x){
+        //     //         if ((posY[0]+vert.pos.y+0.2) >= worldPos.y && (posY[0]+vert.pos.y-0.2) <= worldPos.y){
+        //     //             vert.pos.x += worldPos.x-posX[0];
+        //     //             vert.pos.y += worldPos.y-posY[0];
+        //     //             std::cout << "HIT" << std::endl;
+        //     //         }
+        //     //     }
+        //     // }
 
-            // vertices;
+        //     // vertices;
 
-            //std::cout << "NDC: " << normX << ", " << normY << std::endl;
+        //     //std::cout << "NDC: " << normX << ", " << normY << std::endl;
 
-            // se isso funcionar pqp sou foda
-            UpdateVertexBuffer();
-        }
+        //     // se isso funcionar pqp sou foda
+        //     UpdateVertexBuffer();
+        // }
     }
 
     void createSyncObjects() {
@@ -1461,15 +1475,26 @@ private:
         model = glm::translate(model, glm::vec3(posX[0], posY[0], posZ[0]));
         model = glm::rotate(model, rotX[0], glm::vec3(1.0f, 0.0f, 0.0f)); // eixo X
         model = glm::rotate(model, rotY[0], glm::vec3(0.0f, 1.0f, 0.0f)); // eixo Y
+        model = glm::rotate(model, rotZ[0], glm::vec3(0.0f, 0.0f, 1.0f)); // eixo Z
         model = glm::scale(model, glm::vec3(scale[0], scale[0], scale[0]));
 
         ubo.model[0] = model;
 
+        glm::vec3 shipPos = glm::vec3(posX[0], posY[0], posZ[0]);
+
+        glm::vec3 cameraPos = shipPos + glm::vec3(0.0f, 0.0f, 5.0f);
+
         ubo.view = glm::lookAt(
-            glm::vec3(0.0f, 0.0f, 5.0f),  // câmera acima
-            glm::vec3(0.0f, 0.0f, 0.0f),  // olhando para o centro
-            glm::vec3(0.0f, 1.0f, 0.0f)   // "up" no eixo Y
+            cameraPos,   // posição da câmera
+            shipPos,     // olha pra nave
+            glm::vec3(0.0f, 1.0f, 0.0f)
         );
+
+        // ubo.view = glm::lookAt(
+        //     glm::vec3(0.0f, 0.0f, 5.0f),  // câmera acima
+        //     glm::vec3(0.0f, 0.0f, 0.0f),  // olhando para o centro
+        //     glm::vec3(0.0f, 1.0f, 0.0f)   // "up" no eixo Y
+        // );
 
         ubo.proj = glm::perspective(
             glm::radians(45.0f),
@@ -1572,11 +1597,11 @@ private:
     }
 
     VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes) {
-        for (const auto& availablePresentMode : availablePresentModes) {
-            if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR) {
-                return availablePresentMode;
-            }
-        }
+        // for (const auto& availablePresentMode : availablePresentModes) {
+        //     if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR) {
+        //         return availablePresentMode;
+        //     }
+        // }
 
         return VK_PRESENT_MODE_FIFO_KHR;
     }
