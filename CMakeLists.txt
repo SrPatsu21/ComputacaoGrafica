@@ -130,16 +130,21 @@ file(MAKE_DIRECTORY ${COMPILED_SHADER_DIR})
 set(SHADERS
     vertex.glsl
     fragment.glsl
+    point.vert.glsl
+    point.frag.glsl
 )
 
 set(SHADER_OUTPUTS "")
 foreach(SHADER_NAME IN LISTS SHADERS)
     set(SHADER ${SHADER_DIR}/${SHADER_NAME})
     set(SPV_FILE ${COMPILED_SHADER_DIR}/${SHADER_NAME}.spv)
-
     if(SHADER_NAME MATCHES "vertex.glsl")
         set(STAGE "vert")
+    elseif(SHADER_NAME MATCHES "point.vert.glsl")
+            set(STAGE "vert")
     elseif(SHADER_NAME MATCHES "fragment.glsl")
+        set(STAGE "frag")
+    elseif(SHADER_NAME MATCHES "point.frag.glsl")
         set(STAGE "frag")
     else()
         message(FATAL_ERROR "Unknown shader stage for ${SHADER_NAME}")
