@@ -25,7 +25,8 @@
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
 const uint32_t MAX_OBJECTS = 100;
-const uint32_t MAX_STARS = 100;
+const uint32_t MAX_STARS = 400;
+const uint32_t MAX_PARTICLES = 200;
 
 const int MAX_FRAMES_IN_FLIGHT = 2;
 
@@ -115,7 +116,7 @@ struct PointVertex {
     float size;     // completa 16 bytes
 
     glm::vec3 color;
-    float pad;      // padding manual
+    float life;
 
     static VkVertexInputBindingDescription getBindingDescription() {
         VkVertexInputBindingDescription binding{};
@@ -169,6 +170,10 @@ const std::vector<uint16_t> indices = {
 
 std::vector<PointVertex> points = {
     {{ 0.0f,  0.0f, 5.0f}, 3.0f, {0.9f, 0.9f, 0.9f}, 3.0f}
+};
+
+std::vector<PointVertex> particles = {
+    {{ 0.0f,  0.0f, 5.0f}, 0.5f, {0.9f, 0.9f, 0.9f}, 0.0f}
 };
 
 class HelloTriangleApplication {
@@ -238,7 +243,9 @@ private:
     VkDeviceMemory indexBufferMemory;
 
     VkBuffer pointVertexBuffer;
+    VkBuffer particlesVertexBuffer;
     VkDeviceMemory pointVertexBufferMemory;
+    VkDeviceMemory particlesVertexBufferMemory;
 
 
     std::vector<VkBuffer> uniformBuffers;
@@ -268,6 +275,8 @@ private:
     float scale[MAX_OBJECTS];
 
     UniformBufferObject ubo{};
+
+    glm::vec3 velocity = glm::vec3(0.0f);
 
     static double lastX;
     static double lastY;
@@ -308,6 +317,7 @@ private:
         createTextureSampler();
         createVertexBuffer();
         createPointVertexBuffer();
+        createParticleVertexBuffer();
         createIndexBuffer();
         createUniformBuffers();
         createDescriptorPool();
@@ -320,7 +330,9 @@ private:
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents();
             updatePoints();
+            simulateParticles();
             processInput();
+            updateParticleVertexBuffer();
             drawFrame();
         }
 
@@ -373,6 +385,9 @@ private:
 
         vkDestroyBuffer(device, pointVertexBuffer, nullptr);
         vkFreeMemory(device, pointVertexBufferMemory, nullptr);
+
+        vkDestroyBuffer(device, particlesVertexBuffer, nullptr);
+        vkFreeMemory(device, particlesVertexBufferMemory, nullptr);
 
         vkDestroyPipeline(device, pointPipeline, nullptr);
         vkDestroyPipelineLayout(device, pointPipelineLayout, nullptr);
@@ -1212,6 +1227,87 @@ private:
         vkFreeMemory(device, stagingBufferMemory, nullptr);
     }
 
+    void createParticleVertexBuffer() {
+        VkDeviceSize bufferSize = sizeof(particles[0]) * MAX_PARTICLES;
+
+        VkBuffer stagingBuffer;
+        VkDeviceMemory stagingBufferMemory;
+
+        createBuffer(
+            bufferSize,
+            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+            stagingBuffer,
+            stagingBufferMemory
+        );
+
+        void* data;
+        vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
+            memcpy(data, particles.data(), (size_t)bufferSize);
+        vkUnmapMemory(device, stagingBufferMemory);
+
+        createBuffer(
+            bufferSize,
+            VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+            particlesVertexBuffer,
+            particlesVertexBufferMemory
+        );
+
+        copyBuffer(stagingBuffer, particlesVertexBuffer, bufferSize);
+
+        vkDestroyBuffer(device, stagingBuffer, nullptr);
+        vkFreeMemory(device, stagingBufferMemory, nullptr);
+    }
+
+    float randf() {
+    return (float) rand() / RAND_MAX;
+}
+
+void simulateParticles() {
+    for (int i = 0; i < particles.size(); ) {
+
+        // diminuir vida
+        particles[i].life -= 0.01;
+
+        // fade (opcional mas MUITO importante visualmente)
+        particles[i].size *= particles[i].life;
+
+        // remover se morreu
+        if (particles[i].life <= 0.0f) {
+            particles.erase(particles.begin() + i);
+        } else {
+            i++;
+        }
+    }
+}
+
+glm::vec3 randomInCone(glm::vec3 dir, float angle, float length) {
+    // gera direção aleatória dentro de um cone
+    float u = randf();
+    float v = randf();
+
+    float theta = u * 2.0f * M_PI;
+    float phi = angle * sqrt(v);
+
+    // base (cone no eixo Z)
+    glm::vec3 localDir(
+        sin(phi) * cos(theta),
+        sin(phi) * sin(theta),
+        cos(phi)
+    );
+
+    // alinhar com direção da nave
+    glm::vec3 up = abs(dir.z) < 0.999f ? glm::vec3(0,0,1) : glm::vec3(0,1,0);
+    glm::vec3 right = glm::normalize(glm::cross(up, dir));
+    glm::vec3 forward = glm::normalize(dir);
+    glm::vec3 newUp = glm::cross(forward, right);
+
+    glm::mat3 basis(right, newUp, forward);
+
+    return basis * localDir * length;
+}
+
     void createPointVertexBuffer() {
         VkDeviceSize bufferSize = sizeof(points[0]) * MAX_STARS;
 
@@ -1282,6 +1378,29 @@ private:
         vkFreeMemory(device, stagingBufferMemory, nullptr);
     }
 
+    void updateParticleVertexBuffer() {
+        VkDeviceSize bufferSize = sizeof(particles[0]) * MAX_PARTICLES;
+
+        VkBuffer stagingBuffer;
+        VkDeviceMemory stagingBufferMemory;
+
+        createBuffer( bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+
+        void* data;
+        vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
+        VkDeviceSize usedSize = sizeof(particles[0]) * particles.size();
+
+        memcpy(data, particles.data(), usedSize);
+        memset((char*)data + usedSize, 0, bufferSize - usedSize);
+
+        vkUnmapMemory(device, stagingBufferMemory);
+
+        copyBuffer(stagingBuffer, particlesVertexBuffer, bufferSize);
+
+        vkDestroyBuffer(device, stagingBuffer, nullptr);
+        vkFreeMemory(device, stagingBufferMemory, nullptr);
+    }
+
     glm::vec3 randomPointInSphere(float radius) {
         float u = ((float) rand() / RAND_MAX);
         float v = ((float) rand() / RAND_MAX);
@@ -1299,8 +1418,8 @@ private:
     void updatePoints() {
         glm::vec3 shipPos = glm::vec3(posX[0], posY[0], posZ[0]);
 
-        float maxDistance = 50.0f;
-        float spawnRadius = 50.0f;
+        float maxDistance = 80.0f;
+        float spawnRadius = 80.0f;
 
         bool changed = false;
 
@@ -1323,7 +1442,7 @@ private:
             PointVertex p;
             p.pos = shipPos + offset;
 
-            p.size = 2.0f; //+ ((float)rand() / RAND_MAX) * 3.0f;
+            p.size = 2.0f + ((float)rand() / RAND_MAX) * 3.0f;
 
             float c = 0.7f + ((float)rand() / RAND_MAX) * 0.3f;
             p.color = glm::vec3(c, c, c);
@@ -1335,6 +1454,45 @@ private:
         // UPDATE GPU
         if (changed) {
             updatePointVertexBuffer();
+        }
+    }
+
+    void spawnParticle(glm::vec3 shipPos, glm::vec3 shipDir) {
+        PointVertex p;
+
+        // posição atrás da nave
+        glm::vec3 offset = randomInCone(-shipDir, 0.3f, 0.3f);
+
+        p.pos = shipPos + offset;
+
+        // tamanho
+        p.size = 0.5f + randf();
+
+        // cor tipo fogo
+        float t = randf();
+        p.color = glm::mix(
+            glm::vec3(1.0f, 1.0f, 0.2f), // amarelo
+            glm::vec3(1.0f, 0.2f, 0.0f), // vermelho
+            t
+        );
+
+        // pode usar isso como "vida" se quiser depois
+        p.life = 1.0f;
+
+        // adiciona no buffer
+        if (particles.size() < MAX_PARTICLES) {
+            particles.push_back(p);
+        } else {
+            // sobrescreve (ring buffer simples)
+            particles[rand() % MAX_PARTICLES] = p;
+        }
+    }
+
+    void updateParticles(glm::vec3 shipPos, glm::vec3 shipDir) {
+        int spawnRate = 5; // partículas por frame
+
+        for (int i = 0; i < spawnRate; i++) {
+            spawnParticle(shipPos, shipDir);
         }
     }
 
@@ -1589,6 +1747,13 @@ private:
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pointPipelineLayout, 0, 1, &descriptorSets[currentFrame], 0, nullptr);
             vkCmdDraw(commandBuffer, static_cast<uint32_t>(points.size()), 1, 0, 0);
 
+            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pointPipeline);
+            VkBuffer bufferss[] = {particlesVertexBuffer};
+            VkDeviceSize poffsetss[] = {0};
+            vkCmdBindVertexBuffers(commandBuffer, 0, 1, bufferss, poffsetss);
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pointPipelineLayout, 0, 1, &descriptorSets[currentFrame], 0, nullptr);
+            vkCmdDraw(commandBuffer, static_cast<uint32_t>(points.size()), 1, 0, 0);
+
         vkCmdEndRenderPass(commandBuffer);
 
         if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
@@ -1597,7 +1762,6 @@ private:
     }
 
     void processInput() {
-        float moveSpeed = 0.1f;
         float scaleSpeed = 0.01f;
 
         // MOUSE
@@ -1636,36 +1800,27 @@ private:
         glm::vec3 worldUp = glm::vec3(0, 0, 1);
         glm::vec3 right = glm::normalize(glm::cross(forward, worldUp));
 
-        // MOVIMENTO
+        float acceleration = 0.01f;
+
         if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
-            posX[0] += forward.x * moveSpeed;
-            posY[0] += forward.y * moveSpeed;
-            posZ[0] += forward.z * moveSpeed;
+            velocity += forward * acceleration;
+            updateParticles(glm::vec3(posX[0], posY[0], posZ[0]), forward);
         }
-
+        acceleration*=0.2;
         if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
-            posX[0] -= forward.x * moveSpeed;
-            posY[0] -= forward.y * moveSpeed;
-            posZ[0] -= forward.z * moveSpeed;
+            velocity -= forward * acceleration;
         }
-
-        moveSpeed*=0.2;
         if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
-            posX[0] -= right.x * moveSpeed;
-            posY[0] -= right.y * moveSpeed;
-            posZ[0] -= right.z * moveSpeed;
+            velocity -= right * acceleration;
         }
-
         if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
-            posX[0] += right.x * moveSpeed;
-            posY[0] += right.y * moveSpeed;
-            posZ[0] += right.z * moveSpeed;
+            velocity += right * acceleration;
         }
-
-        // ESCALA
-        if (glfwGetKey(window, GLFW_KEY_Z) == GLFW_PRESS) scale[0] += scaleSpeed;
-        if (glfwGetKey(window, GLFW_KEY_X) == GLFW_PRESS) scale[0] -= scaleSpeed;
-        if (scale[0] < 0.1f) scale[0] = 0.1f;
+        posX[0] += velocity.x;
+        posY[0] += velocity.y;
+        posZ[0] += velocity.z;
+        float damping = 0.99f;
+        velocity *= damping;
     }
 
     void createSyncObjects() {
@@ -1714,7 +1869,7 @@ private:
         ubo.model[0] = model;
 
         // CAMERA
-        glm::vec3 cameraPos = shipPos - forward * 5.0f + up * 2.0f;
+        glm::vec3 cameraPos = shipPos - forward * 5.0f + up * 3.0f;
 
         ubo.view = glm::lookAt(cameraPos, shipPos, up);
 
@@ -1725,7 +1880,6 @@ private:
             0.1f,
             100.0f
         );
-        
 
         ubo.proj[1][1] *= -1;
 
