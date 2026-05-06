@@ -25,6 +25,7 @@
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
 const uint32_t MAX_OBJECTS = 100;
+const uint32_t MAX_STARS = 100;
 
 const int MAX_FRAMES_IN_FLIGHT = 2;
 
@@ -167,8 +168,7 @@ const std::vector<uint16_t> indices = {
 };
 
 std::vector<PointVertex> points = {
-    {{ 0.0f,  0.0f, 0.0f}, 3.0f, {0.9f, 0.9f, 0.9f}, 3.0f},
-    {{ 4.0f,  0.0f, 1.0f}, 0.5f, {0.9f, 0.9f, 0.9f}, 0.5f},
+    {{ 0.0f,  0.0f, 5.0f}, 3.0f, {0.9f, 0.9f, 0.9f}, 3.0f}
 };
 
 class HelloTriangleApplication {
@@ -185,6 +185,10 @@ public:
 
         initWindow();
         initVulkan();
+        double mouseX, mouseY;
+        glfwGetCursorPos(window, &mouseX, &mouseY);
+        lastX = mouseX;
+        lastY = mouseY;
         mainLoop();
         cleanup();
     }
@@ -265,6 +269,9 @@ private:
 
     UniformBufferObject ubo{};
 
+    static double lastX;
+    static double lastY;
+
     void initWindow() {
         glfwInit();
 
@@ -273,6 +280,7 @@ private:
         window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
         glfwSetWindowUserPointer(window, this);
         glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
+        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
     }
 
     static void framebufferResizeCallback(GLFWwindow* window, int width, int height) {
@@ -311,6 +319,7 @@ private:
     void mainLoop() {
         while (!glfwWindowShouldClose(window)) {
             glfwPollEvents();
+            updatePoints();
             processInput();
             drawFrame();
         }
@@ -866,7 +875,7 @@ private:
         VkPipelineDepthStencilStateCreateInfo depthStencil{};
         depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
         depthStencil.depthTestEnable = VK_TRUE;
-        depthStencil.depthWriteEnable = VK_TRUE;
+        depthStencil.depthWriteEnable = VK_FALSE;
         depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
         depthStencil.depthBoundsTestEnable = VK_FALSE;
         depthStencil.stencilTestEnable = VK_FALSE;
@@ -1204,7 +1213,7 @@ private:
     }
 
     void createPointVertexBuffer() {
-        VkDeviceSize bufferSize = sizeof(points[0]) * points.size();
+        VkDeviceSize bufferSize = sizeof(points[0]) * MAX_STARS;
 
         VkBuffer stagingBuffer;
         VkDeviceMemory stagingBufferMemory;
@@ -1252,12 +1261,81 @@ private:
 
         vkDestroyBuffer(device, stagingBuffer, nullptr);
         vkFreeMemory(device, stagingBufferMemory, nullptr);
-        std::cout << "updatebuffer" << std::endl;
-        for (size_t i = 0; i < vertices.size(); i++)
-        {
-            std::cout << i << " " << vertices[i].pos.x << "," << vertices[i].pos.y << "," << vertices[i].pos.z << std::endl;
+    }
+
+    void updatePointVertexBuffer() {
+        VkDeviceSize bufferSize = sizeof(points[0]) * MAX_STARS;
+
+        VkBuffer stagingBuffer;
+        VkDeviceMemory stagingBufferMemory;
+
+        createBuffer( bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+
+        void* data;
+        vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
+        memcpy(data, points.data(), (size_t)bufferSize);
+        vkUnmapMemory(device, stagingBufferMemory);
+
+        copyBuffer(stagingBuffer, pointVertexBuffer, bufferSize);
+
+        vkDestroyBuffer(device, stagingBuffer, nullptr);
+        vkFreeMemory(device, stagingBufferMemory, nullptr);
+    }
+
+    glm::vec3 randomPointInSphere(float radius) {
+        float u = ((float) rand() / RAND_MAX);
+        float v = ((float) rand() / RAND_MAX);
+        float theta = u * 2.0f * M_PI;
+        float phi = acos(2.0f * v - 1.0f);
+        float r = cbrt((float) rand() / RAND_MAX) * radius;
+
+        float x = r * sin(phi) * cos(theta);
+        float y = r * sin(phi) * sin(theta);
+        float z = r * cos(phi);
+
+        return glm::vec3(x, y, z);
+    }
+
+    void updatePoints() {
+        glm::vec3 shipPos = glm::vec3(posX[0], posY[0], posZ[0]);
+
+        float maxDistance = 50.0f;
+        float spawnRadius = 50.0f;
+
+        bool changed = false;
+
+        // REMOVER pontos longe
+        for (int i = 0; i < points.size(); ) {
+            float dist = glm::distance(points[i].pos, shipPos);
+
+            if (dist > maxDistance) {
+                points.erase(points.begin() + i);
+                changed = true;
+            } else {
+                i++;
+            }
         }
 
+        // GERAR novos pontos
+        while (points.size() < MAX_STARS) {
+            glm::vec3 offset = randomPointInSphere(spawnRadius);
+
+            PointVertex p;
+            p.pos = shipPos + offset;
+
+            p.size = 2.0f; //+ ((float)rand() / RAND_MAX) * 3.0f;
+
+            float c = 0.7f + ((float)rand() / RAND_MAX) * 0.3f;
+            p.color = glm::vec3(c, c, c);
+
+            points.push_back(p);
+            changed = true;
+        }
+
+        // UPDATE GPU
+        if (changed) {
+            updatePointVertexBuffer();
+        }
     }
 
     void createIndexBuffer() {
@@ -1519,146 +1597,75 @@ private:
     }
 
     void processInput() {
-        float moveSpeed = 0.02f;
-        float rotSpeed = 0.02f;
+        float moveSpeed = 0.1f;
         float scaleSpeed = 0.01f;
 
-        // forward base
-        float fx = 0.0f;
-        float fy = 1.0f;
-        float fz = 0.0f;
+        // MOUSE
+        double mouseX, mouseY;
+        glfwGetCursorPos(window, &mouseX, &mouseY);
 
-        // rotações
-        float cx = cos(rotX[0]);
-        float sx = sin(rotX[0]);
-        float cz = cos(rotZ[0]);
-        float sz = sin(rotZ[0]);
+        static bool firstMouse = true;
+        if (firstMouse) {
+            lastX = mouseX;
+            lastY = mouseY;
+            firstMouse = false;
+        }
 
-        // 1. yaw (Z)
-        float fx1 = fx * cz - fy * sz;
-        float fy1 = fx * sz + fy * cz;
-        float fz1 = fz;
+        double deltaX = mouseX - lastX;
+        double deltaY = mouseY - lastY;
 
-        // 2. pitch (X)
-        float fx2 = fx1;
-        float fy2 = fy1 * cx - fz1 * sx;
-        float fz2 = fy1 * sx + fz1 * cx;
+        lastX = mouseX;
+        lastY = mouseY;
 
-        // final
-        float dx = fx2;
-        float dy = fy2;
-        float dz = fz2;
+        float sensitivity = 0.002f;
 
-        // Movimento (WASD)
+        rotZ[0] -= deltaX * sensitivity; // yaw
+        rotX[0] -= deltaY * sensitivity; // pitch
+
+        // evita flip
+        float limit = glm::radians(365.5f);
+        rotX[0] = glm::clamp(rotX[0], -limit, limit);
+
+        // DIREÇÃO
+        glm::vec3 forward;
+        forward.x = cos(rotX[0]) * cos(rotZ[0]);
+        forward.y = cos(rotX[0]) * sin(rotZ[0]);
+        forward.z = sin(rotX[0]);
+        forward = glm::normalize(forward);
+
+        glm::vec3 worldUp = glm::vec3(0, 0, 1);
+        glm::vec3 right = glm::normalize(glm::cross(forward, worldUp));
+
+        // MOVIMENTO
         if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
-            posX[0] += dx * moveSpeed;
-            posY[0] += dy * moveSpeed;
-            posZ[0] += dz * moveSpeed;
-
-            std::cout << "pos: (" << posX[0] << "," << posY[0] << "," << posZ[0] << ")" << std::endl;
+            posX[0] += forward.x * moveSpeed;
+            posY[0] += forward.y * moveSpeed;
+            posZ[0] += forward.z * moveSpeed;
         }
-        // Movimento (WASD)
+
         if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
-            posX[0] -= dx * moveSpeed;
-            posY[0] -= dy * moveSpeed;
-            posZ[0] -= dz * moveSpeed;
+            posX[0] -= forward.x * moveSpeed;
+            posY[0] -= forward.y * moveSpeed;
+            posZ[0] -= forward.z * moveSpeed;
         }
-        float rx =  cos(rotZ[0]);
-        float ry =  sin(rotZ[0]);
-        float rz =  0.0f;
 
+        moveSpeed*=0.2;
         if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
-            posX[0] -= rx * moveSpeed*0.2;
-            posY[0] -= ry * moveSpeed*0.2;
-            posZ[0] -= rz * moveSpeed*0.2;
+            posX[0] -= right.x * moveSpeed;
+            posY[0] -= right.y * moveSpeed;
+            posZ[0] -= right.z * moveSpeed;
         }
+
         if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
-            posX[0] += rx * moveSpeed*0.2;
-            posY[0] += ry * moveSpeed*0.2;
-            posZ[0] += rz * moveSpeed*0.2;
+            posX[0] += right.x * moveSpeed;
+            posY[0] += right.y * moveSpeed;
+            posZ[0] += right.z * moveSpeed;
         }
 
-        // Rotação com setas
-        if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS)    rotX[0] += rotSpeed;
-        if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS)  rotX[0] -= rotSpeed;
-        if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)  rotZ[0] += rotSpeed;
-        if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) rotZ[0] -= rotSpeed;
-
-        // Escala
+        // ESCALA
         if (glfwGetKey(window, GLFW_KEY_Z) == GLFW_PRESS) scale[0] += scaleSpeed;
         if (glfwGetKey(window, GLFW_KEY_X) == GLFW_PRESS) scale[0] -= scaleSpeed;
         if (scale[0] < 0.1f) scale[0] = 0.1f;
-
-        // mouse
-        // if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS)
-        // {
-        //     double mouseX, mouseY;
-        //     glfwGetCursorPos(window, &mouseX, &mouseY);
-
-        //     int width, height;
-        //     glfwGetWindowSize(window, &width, &height);
-
-        //     // std::cout << "Click em: " << mouseX << ", " << mouseY << std::endl;
-        //     // cordenada da tela
-        //     float normX = (2.0f * mouseX) / width - 1.0f;
-        //     float normY = 1.0f - (2.0f * mouseY) / height;
-
-        //     // vetor de espaco do ponto
-        //     glm::vec3 ray_nds = glm::vec3(normX, -normY, 0);
-
-        //     // vetor de direcao (Z = -1)
-        //     glm::vec4 ray_clip = glm::vec4(ray_nds.x, ray_nds.y, -1.0f, 1.0f);
-
-        //     // converte para espaco de camera
-        //     glm::vec4 ray_eye = glm::inverse(ubo.proj) * ray_clip;
-
-        //     // transformar em vetor de direção
-        //     ray_eye = glm::vec4(ray_eye.x, ray_eye.y, -1.0f, 0.0f);
-
-        //     // direcao do raio
-        //     glm::vec3 ray_world = glm::normalize(glm::vec3(glm::inverse(ubo.view) * ray_eye));
-
-        //     // posicao da camera mesma do view
-        //     glm::vec3 camPos = glm::vec3(0.0f, 0.0f, 5.0f);
-
-        //     // calcula a posicao no mundo
-        //     float t = -camPos.z / ray_world.z;
-        //     glm::vec3 worldPos = camPos + t * ray_world;
-
-        //     // if (posX[0]+0.5 >= worldPos.x && posX[0]-0.5 <= worldPos.x){
-        //     //     if (posY[0]+0.5 >= worldPos.y && posY[0]-0.5 <= worldPos.y){
-        //     //         posX[0] = worldPos.x;
-        //     //         posY[0] = worldPos.y;
-        //     //     }
-        //     // }
-
-
-        //     for (size_t i = 0; i < vertices.size(); i++){
-        //         if ((posX[0]+vertices[i].pos.x+0.2) >= worldPos.x && (posX[0]+vertices[i].pos.x-0.2) <= worldPos.x){
-        //             if ((posY[0]+vertices[i].pos.y+0.2) >= worldPos.y && (posY[0]+vertices[i].pos.y-0.2) <= worldPos.y){
-        //                 vertices[i].pos.x = worldPos.x-posX[0];
-        //                 vertices[i].pos.y = worldPos.y-posY[0];
-        //                 std::cout << "HIT" << std::endl;
-        //             }
-        //         }
-        //     }
-        //     // for(auto vert : vertices){
-        //     //     if ((posX[0]+vert.pos.x+0.2) >= worldPos.x && (posX[0]+vert.pos.x-0.2) <= worldPos.x){
-        //     //         if ((posY[0]+vert.pos.y+0.2) >= worldPos.y && (posY[0]+vert.pos.y-0.2) <= worldPos.y){
-        //     //             vert.pos.x += worldPos.x-posX[0];
-        //     //             vert.pos.y += worldPos.y-posY[0];
-        //     //             std::cout << "HIT" << std::endl;
-        //     //         }
-        //     //     }
-        //     // }
-
-        //     // vertices;
-
-        //     //std::cout << "NDC: " << normX << ", " << normY << std::endl;
-
-        //     // se isso funcionar pqp sou foda
-        //     UpdateVertexBuffer();
-        // }
     }
 
     void createSyncObjects() {
@@ -1683,42 +1690,42 @@ private:
     }
 
     void updateUniformBuffer(uint32_t currentImage) {
-        static auto startTime = std::chrono::high_resolution_clock::now();
+        glm::vec3 shipPos = glm::vec3(posX[0], posY[0], posZ[0]);
 
-        auto currentTime = std::chrono::high_resolution_clock::now();
-        float time = std::chrono::duration<float>(currentTime - startTime).count();
+        // DIRECAO
+        glm::vec3 forward;
+        forward.x = cos(rotX[0]) * cos(rotZ[0]);
+        forward.y = cos(rotX[0]) * sin(rotZ[0]);
+        forward.z = sin(rotX[0]);
+        forward = glm::normalize(forward);
 
+        glm::vec3 worldUp = glm::vec3(0, 0, 1);
+        glm::vec3 right = glm::normalize(glm::cross(forward, worldUp));
+        glm::vec3 up    = glm::normalize(glm::cross(right, forward));
+
+        // MODEL
         glm::mat4 model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(posX[0], posY[0], posZ[0]));
-        model = glm::rotate(model, rotX[0], glm::vec3(1.0f, 0.0f, 0.0f)); // eixo X
-        model = glm::rotate(model, rotY[0], glm::vec3(0.0f, 1.0f, 0.0f)); // eixo Y
-        model = glm::rotate(model, rotZ[0], glm::vec3(0.0f, 0.0f, 1.0f)); // eixo Z
-        model = glm::scale(model, glm::vec3(scale[0], scale[0], scale[0]));
+
+        model[0] = glm::vec4(right * scale[0],   0.0f);
+        model[1] = glm::vec4(forward * scale[0], 0.0f);
+        model[2] = glm::vec4(up * scale[0],      0.0f);
+        model[3] = glm::vec4(shipPos,            1.0f);
 
         ubo.model[0] = model;
 
-        glm::vec3 shipPos = glm::vec3(posX[0], posY[0], posZ[0]);
+        // CAMERA
+        glm::vec3 cameraPos = shipPos - forward * 5.0f + up * 2.0f;
 
-        glm::vec3 cameraPos = shipPos + glm::vec3(0.0f, 0.0f, 5.0f);
+        ubo.view = glm::lookAt(cameraPos, shipPos, up);
 
-        ubo.view = glm::lookAt(
-            cameraPos,   // posição da câmera
-            shipPos,     // olha pra nave
-            glm::vec3(0.0f, 1.0f, 0.0f)
-        );
-
-        // ubo.view = glm::lookAt(
-        //     glm::vec3(0.0f, 0.0f, 5.0f),  // câmera acima
-        //     glm::vec3(0.0f, 0.0f, 0.0f),  // olhando para o centro
-        //     glm::vec3(0.0f, 1.0f, 0.0f)   // "up" no eixo Y
-        // );
-
+        // PROJEÇÃO
         ubo.proj = glm::perspective(
             glm::radians(45.0f),
             swapChainExtent.width / (float) swapChainExtent.height,
             0.1f,
-            10.0f
+            100.0f
         );
+        
 
         ubo.proj[1][1] *= -1;
 
@@ -2007,3 +2014,6 @@ int main() {
 
     return EXIT_SUCCESS;
 }
+
+double HelloTriangleApplication::lastX = 0.0;
+double HelloTriangleApplication::lastY = 0.0;
