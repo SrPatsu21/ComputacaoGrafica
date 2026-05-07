@@ -118,6 +118,7 @@ struct PointVertex {
 
     glm::vec3 color;
     float life;
+    glm::vec3 velocity;;
 
     static VkVertexInputBindingDescription getBindingDescription() {
         VkVertexInputBindingDescription binding{};
@@ -176,6 +177,8 @@ std::vector<PointVertex> points = {
 std::vector<PointVertex> particles = {
     {{ 0.0f,  0.0f, 5.0f}, 0.5f, {0.9f, 0.9f, 0.9f}, 0.0f}
 };
+
+std::vector<PointVertex> bullets(MAX_PARTICLES);
 
 class HelloTriangleApplication {
 public:
@@ -245,9 +248,10 @@ private:
 
     VkBuffer pointVertexBuffer;
     VkBuffer particlesVertexBuffer;
+    VkBuffer bulletVertexBuffer;
     VkDeviceMemory pointVertexBufferMemory;
     VkDeviceMemory particlesVertexBufferMemory;
-
+    VkDeviceMemory bulletVertexBufferMemory;
 
     std::vector<VkBuffer> uniformBuffers;
     std::vector<VkDeviceMemory> uniformBuffersMemory;
@@ -281,6 +285,7 @@ private:
 
     static double lastX;
     static double lastY;
+    static double lastShotTime;
 
     void initWindow() {
         glfwInit();
@@ -319,6 +324,7 @@ private:
         createVertexBuffer();
         createPointVertexBuffer();
         createParticleVertexBuffer();
+        createBulletsVertexBuffer();
         createIndexBuffer();
         createUniformBuffers();
         createDescriptorPool();
@@ -328,29 +334,43 @@ private:
     }
 
     void mainLoop() {
+
         const double targetFPS = 60.0;
         const std::chrono::duration<double> targetFrameTime(1.0 / targetFPS);
+
+        auto lastTime = std::chrono::high_resolution_clock::now();
 
         while (!glfwWindowShouldClose(window)) {
 
             auto frameStart = std::chrono::high_resolution_clock::now();
 
+            // DELTA TIME
+            float deltaTime = std::chrono::duration<float>(frameStart - lastTime).count();
+
+            lastTime = frameStart;
+
             glfwPollEvents();
 
             updatePoints();
             simulateParticles();
+
             processInput();
+
             updateParticleVertexBuffer();
+
+            updateBullets(deltaTime);
+
             drawFrame();
 
             auto frameEnd = std::chrono::high_resolution_clock::now();
+
             std::chrono::duration<double> elapsed = frameEnd - frameStart;
 
-            // espera o tempo restante para completar 1 frame
             if (elapsed < targetFrameTime) {
                 std::this_thread::sleep_for(targetFrameTime - elapsed);
             }
         }
+
         vkDeviceWaitIdle(device);
     }
 
@@ -403,6 +423,10 @@ private:
 
         vkDestroyBuffer(device, particlesVertexBuffer, nullptr);
         vkFreeMemory(device, particlesVertexBufferMemory, nullptr);
+
+        vkDestroyBuffer(device, bulletVertexBuffer, nullptr);
+        vkFreeMemory(device, bulletVertexBufferMemory, nullptr);
+
 
         vkDestroyPipeline(device, pointPipeline, nullptr);
         vkDestroyPipelineLayout(device, pointPipelineLayout, nullptr);
@@ -1278,6 +1302,38 @@ private:
     float randf() {
     return (float) rand() / RAND_MAX;
 }
+    void createBulletsVertexBuffer() {
+        VkDeviceSize bufferSize = sizeof(PointVertex) * MAX_PARTICLES;
+
+        VkBuffer stagingBuffer;
+        VkDeviceMemory stagingBufferMemory;
+
+        createBuffer(
+            bufferSize,
+            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+            stagingBuffer,
+            stagingBufferMemory
+        );
+
+        void* data;
+        vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
+            memcpy(data, bullets.data(), (size_t)bufferSize);
+        vkUnmapMemory(device, stagingBufferMemory);
+
+        createBuffer(
+            bufferSize,
+            VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+            bulletVertexBuffer,
+            bulletVertexBufferMemory
+        );
+
+        copyBuffer(stagingBuffer, bulletVertexBuffer, bufferSize);
+
+        vkDestroyBuffer(device, stagingBuffer, nullptr);
+        vkFreeMemory(device, stagingBufferMemory, nullptr);
+    }
 
 void simulateParticles() {
     for (int i = 0; i < particles.size(); ) {
@@ -1295,6 +1351,37 @@ void simulateParticles() {
             i++;
         }
     }
+}
+
+void shootBullet(glm::vec3 shipPos, glm::vec3 forward) {
+    PointVertex bullet;
+
+    bullet.pos = shipPos + forward * 0.5f;
+    bullet.velocity = forward * 8.0f;
+    bullet.size = 0.4;
+
+    bullet.color = glm::vec4(0.2f, 0.6f, 1.0f, 1.0f);
+
+    bullet.life = 2.0f;
+
+    bullets.push_back(bullet);
+}
+
+void updateBullets(float deltaTime) {
+
+    for (size_t i = 0; i < bullets.size();) {
+
+        bullets[i].pos += bullets[i].velocity * deltaTime;
+
+        bullets[i].life -= 0.01;
+
+        if (bullets[i].life <= 0.0f) {
+            bullets.erase(bullets.begin() + i);
+        } else {
+            ++i;
+        }
+    }
+    updateBulletVertexBuffer();
 }
 
 glm::vec3 randomInCone(glm::vec3 dir, float angle, float length) {
@@ -1411,6 +1498,29 @@ glm::vec3 randomInCone(glm::vec3 dir, float angle, float length) {
         vkUnmapMemory(device, stagingBufferMemory);
 
         copyBuffer(stagingBuffer, particlesVertexBuffer, bufferSize);
+
+        vkDestroyBuffer(device, stagingBuffer, nullptr);
+        vkFreeMemory(device, stagingBufferMemory, nullptr);
+    }
+
+    void updateBulletVertexBuffer() {
+        VkDeviceSize bufferSize = sizeof(PointVertex) * MAX_PARTICLES;
+
+        VkBuffer stagingBuffer;
+        VkDeviceMemory stagingBufferMemory;
+
+        createBuffer( bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+
+        void* data;
+        vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
+        VkDeviceSize usedSize = sizeof(PointVertex) * bullets.size();
+
+        memcpy(data, bullets.data(), usedSize);
+        memset((char*)data + usedSize, 0, bufferSize - usedSize);
+
+        vkUnmapMemory(device, stagingBufferMemory);
+
+        copyBuffer(stagingBuffer, bulletVertexBuffer, bufferSize);
 
         vkDestroyBuffer(device, stagingBuffer, nullptr);
         vkFreeMemory(device, stagingBufferMemory, nullptr);
@@ -1767,7 +1877,14 @@ glm::vec3 randomInCone(glm::vec3 dir, float angle, float length) {
             VkDeviceSize poffsetss[] = {0};
             vkCmdBindVertexBuffers(commandBuffer, 0, 1, bufferss, poffsetss);
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pointPipelineLayout, 0, 1, &descriptorSets[currentFrame], 0, nullptr);
-            vkCmdDraw(commandBuffer, static_cast<uint32_t>(points.size()), 1, 0, 0);
+            vkCmdDraw(commandBuffer, static_cast<uint32_t>(particles.size()), 1, 0, 0);
+
+            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pointPipeline);
+            VkBuffer buffersss[] = {bulletVertexBuffer};
+            VkDeviceSize poffsetsss[] = {0};
+            vkCmdBindVertexBuffers(commandBuffer, 0, 1, buffersss, poffsetsss);
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pointPipelineLayout, 0, 1, &descriptorSets[currentFrame], 0, nullptr);
+            vkCmdDraw(commandBuffer, static_cast<uint32_t>(bullets.size()), 1, 0, 0);
 
         vkCmdEndRenderPass(commandBuffer);
 
@@ -1834,6 +1951,20 @@ glm::vec3 randomInCone(glm::vec3 dir, float angle, float length) {
         posZ[0] += velocity.z;
         float damping = 0.99f;
         velocity *= damping;
+
+        double currentTime = glfwGetTime();
+
+        if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
+
+            if (currentTime - lastShotTime > 0.1) {
+
+                glm::vec3 shipPos = glm::vec3(posX[0], posY[0], posZ[0]);
+
+                shootBullet(shipPos, forward);
+
+                lastShotTime = currentTime;
+            }
+        }
     }
 
     void createSyncObjects() {
@@ -2184,3 +2315,4 @@ int main() {
 
 double HelloTriangleApplication::lastX = 0.0;
 double HelloTriangleApplication::lastY = 0.0;
+double HelloTriangleApplication::lastShotTime = 0.0;
