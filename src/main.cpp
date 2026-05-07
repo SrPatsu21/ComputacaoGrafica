@@ -21,6 +21,7 @@
 #include <array>
 #include <optional>
 #include <set>
+#include <thread>
 
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
@@ -327,15 +328,29 @@ private:
     }
 
     void mainLoop() {
+        const double targetFPS = 60.0;
+        const std::chrono::duration<double> targetFrameTime(1.0 / targetFPS);
+
         while (!glfwWindowShouldClose(window)) {
+
+            auto frameStart = std::chrono::high_resolution_clock::now();
+
             glfwPollEvents();
+
             updatePoints();
             simulateParticles();
             processInput();
             updateParticleVertexBuffer();
             drawFrame();
-        }
 
+            auto frameEnd = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<double> elapsed = frameEnd - frameStart;
+
+            // espera o tempo restante para completar 1 frame
+            if (elapsed < targetFrameTime) {
+                std::this_thread::sleep_for(targetFrameTime - elapsed);
+            }
+        }
         vkDeviceWaitIdle(device);
     }
 
@@ -1762,8 +1777,6 @@ glm::vec3 randomInCone(glm::vec3 dir, float angle, float length) {
     }
 
     void processInput() {
-        float scaleSpeed = 0.01f;
-
         // MOUSE
         double mouseX, mouseY;
         glfwGetCursorPos(window, &mouseX, &mouseY);
@@ -1800,7 +1813,7 @@ glm::vec3 randomInCone(glm::vec3 dir, float angle, float length) {
         glm::vec3 worldUp = glm::vec3(0, 0, 1);
         glm::vec3 right = glm::normalize(glm::cross(forward, worldUp));
 
-        float acceleration = 0.01f;
+        float acceleration = 0.001f;
 
         if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
             velocity += forward * acceleration;
