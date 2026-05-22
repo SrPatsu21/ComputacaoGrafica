@@ -132,6 +132,8 @@ set(SHADERS
     fragment.glsl
     point.vert.glsl
     point.frag.glsl
+    pointtext.frag.glsl
+    pointtext.vert.glsl
 )
 
 set(SHADER_OUTPUTS "")
@@ -142,9 +144,13 @@ foreach(SHADER_NAME IN LISTS SHADERS)
         set(STAGE "vert")
     elseif(SHADER_NAME MATCHES "point.vert.glsl")
             set(STAGE "vert")
+    elseif(SHADER_NAME MATCHES "pointtext.vert.glsl")
+            set(STAGE "vert")
     elseif(SHADER_NAME MATCHES "fragment.glsl")
         set(STAGE "frag")
     elseif(SHADER_NAME MATCHES "point.frag.glsl")
+        set(STAGE "frag")
+    elseif(SHADER_NAME MATCHES "pointtext.frag.glsl")
         set(STAGE "frag")
     else()
         message(FATAL_ERROR "Unknown shader stage for ${SHADER_NAME}")

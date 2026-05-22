@@ -26,8 +26,9 @@
 const uint32_t WIDTH = 800;
 const uint32_t HEIGHT = 600;
 const uint32_t MAX_OBJECTS = 100;
-const uint32_t MAX_STARS = 400;
+const uint32_t MAX_STARS = 200;
 const uint32_t MAX_PARTICLES = 200;
+const uint32_t MAX_METEORS = 200;
 
 const int MAX_FRAMES_IN_FLIGHT = 2;
 
@@ -147,6 +148,55 @@ struct PointVertex {
     }
 };
 
+struct PointTextVertex {
+    glm::vec3 pos;
+    float size;
+
+    glm::vec2 texCoord;
+
+    // CPU only
+    float life;
+    glm::vec3 velocity;
+
+    static VkVertexInputBindingDescription getBindingDescription() {
+        VkVertexInputBindingDescription binding{};
+        binding.binding = 0;
+
+        // stride REAL da struct
+        binding.stride = sizeof(PointTextVertex);
+
+        binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+        return binding;
+    }
+
+    static std::array<VkVertexInputAttributeDescription, 3>
+    getAttributeDescriptions() {
+
+        std::array<VkVertexInputAttributeDescription, 3> attrs{};
+
+        // POSITION
+        attrs[0].binding = 0;
+        attrs[0].location = 0;
+        attrs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+        attrs[0].offset = offsetof(PointTextVertex, pos);
+
+        // SIZE
+        attrs[1].binding = 0;
+        attrs[1].location = 1;
+        attrs[1].format = VK_FORMAT_R32_SFLOAT;
+        attrs[1].offset = offsetof(PointTextVertex, size);
+
+        // TEXCOORD
+        attrs[2].binding = 0;
+        attrs[2].location = 2;
+        attrs[2].format = VK_FORMAT_R32G32_SFLOAT;
+        attrs[2].offset = offsetof(PointTextVertex, texCoord);
+
+        return attrs;
+    }
+};
+
 struct UniformBufferObject {
     alignas(16) glm::mat4 model[MAX_OBJECTS];
     alignas(16) glm::mat4 view;
@@ -170,7 +220,9 @@ const std::vector<uint16_t> indices = {
     3, 1, 4
 };
 
-std::vector<PointVertex> points = {
+std::vector<PointTextVertex> meteors(MAX_METEORS);
+
+std::vector<PointVertex> stars = {
     {{ 0.0f,  0.0f, 5.0f}, 3.0f, {0.9f, 0.9f, 0.9f}, 3.0f}
 };
 
@@ -230,6 +282,9 @@ private:
     VkPipelineLayout pointPipelineLayout;
     VkPipeline pointPipeline;
 
+    VkPipelineLayout texturedPointPipelineLayout;
+    VkPipeline texturedPointPipeline;
+
     VkCommandPool commandPool;
 
     VkImage depthImage;
@@ -249,9 +304,12 @@ private:
     VkBuffer pointVertexBuffer;
     VkBuffer particlesVertexBuffer;
     VkBuffer bulletVertexBuffer;
+    VkBuffer texturedPointVertexBuffer;
+
     VkDeviceMemory pointVertexBufferMemory;
     VkDeviceMemory particlesVertexBufferMemory;
     VkDeviceMemory bulletVertexBufferMemory;
+    VkDeviceMemory texturedPointVertexBufferMemory;
 
     std::vector<VkBuffer> uniformBuffers;
     std::vector<VkDeviceMemory> uniformBuffersMemory;
@@ -315,16 +373,43 @@ private:
         createDescriptorSetLayout();
         createGraphicsPipeline();
         createPointPipeline();
+        createTexturedPointPipeline();
         createCommandPool();
         createDepthResources();
         createFramebuffers();
         createTextureImage();
         createTextureImageView();
         createTextureSampler();
-        createVertexBuffer();
-        createPointVertexBuffer();
-        createParticleVertexBuffer();
-        createBulletsVertexBuffer();
+        createGenericVertexBuffer(
+            vertices.data(),
+            vertices.size(),
+            vertexBuffer,
+            vertexBufferMemory
+        );
+        createGenericVertexBuffer(
+            particles.data(),
+            MAX_PARTICLES,
+            particlesVertexBuffer,
+            particlesVertexBufferMemory
+        );
+        createGenericVertexBuffer(
+            bullets.data(),
+            MAX_PARTICLES,
+            bulletVertexBuffer,
+            bulletVertexBufferMemory
+        );
+        createGenericVertexBuffer(
+            stars.data(),
+            MAX_STARS,
+            pointVertexBuffer,
+            pointVertexBufferMemory
+        );
+        createGenericVertexBuffer(
+            meteors.data(),
+            MAX_METEORS,
+            texturedPointVertexBuffer,
+            texturedPointVertexBufferMemory
+        );
         createIndexBuffer();
         createUniformBuffers();
         createDescriptorPool();
@@ -351,12 +436,18 @@ private:
 
             glfwPollEvents();
 
-            updatePoints();
+            updatestars();
+            updateMeteoros();
             simulateParticles();
 
             processInput();
 
-            updateParticleVertexBuffer();
+            updateGenericVertexBuffer(
+                particles.data(),
+                particles.size(),
+                MAX_PARTICLES,
+                particlesVertexBuffer
+            );
 
             updateBullets(deltaTime);
 
@@ -426,10 +517,30 @@ private:
 
         vkDestroyBuffer(device, bulletVertexBuffer, nullptr);
         vkFreeMemory(device, bulletVertexBufferMemory, nullptr);
-
+        vkDestroyBuffer(
+            device,
+            texturedPointVertexBuffer,
+            nullptr
+        );
+        vkFreeMemory(
+            device,
+            texturedPointVertexBufferMemory,
+            nullptr
+        );
 
         vkDestroyPipeline(device, pointPipeline, nullptr);
         vkDestroyPipelineLayout(device, pointPipelineLayout, nullptr);
+
+        vkDestroyPipeline(
+            device,
+            texturedPointPipeline,
+            nullptr
+        );
+        vkDestroyPipelineLayout(
+            device,
+            texturedPointPipelineLayout,
+            nullptr
+        );
 
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
             vkDestroySemaphore(device, renderFinishedSemaphores[i], nullptr);
@@ -992,6 +1103,296 @@ private:
         vkDestroyShaderModule(device, vertShaderModule, nullptr);
     }
 
+    void createTexturedPointPipeline() {
+        auto vertShaderCode = readFile("shaders/pointtext.vert.glsl.spv");
+        auto fragShaderCode = readFile("shaders/pointtext.frag.glsl.spv");
+
+        VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
+        VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
+
+        VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
+        vertShaderStageInfo.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        vertShaderStageInfo.stage  = VK_SHADER_STAGE_VERTEX_BIT;
+        vertShaderStageInfo.module = vertShaderModule;
+        vertShaderStageInfo.pName  = "main";
+
+        VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
+        fragShaderStageInfo.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        fragShaderStageInfo.stage  = VK_SHADER_STAGE_FRAGMENT_BIT;
+        fragShaderStageInfo.module = fragShaderModule;
+        fragShaderStageInfo.pName  = "main";
+
+        VkPipelineShaderStageCreateInfo shaderStages[] = {
+            vertShaderStageInfo,
+            fragShaderStageInfo
+        };
+
+        // =========================================
+        // VERTEX INPUT
+        // =========================================
+
+        auto bindingDescription =
+            PointTextVertex::getBindingDescription();
+
+        auto attributeDescriptions =
+            PointTextVertex::getAttributeDescriptions();
+
+        VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
+        vertexInputInfo.sType =
+            VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+
+        vertexInputInfo.vertexBindingDescriptionCount = 1;
+        vertexInputInfo.pVertexBindingDescriptions =
+            &bindingDescription;
+
+        vertexInputInfo.vertexAttributeDescriptionCount =
+            static_cast<uint32_t>(attributeDescriptions.size());
+
+        vertexInputInfo.pVertexAttributeDescriptions =
+            attributeDescriptions.data();
+
+        // =========================================
+        // INPUT ASSEMBLY
+        // =========================================
+
+        VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+        inputAssembly.sType =
+            VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+
+        inputAssembly.topology =
+            VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
+
+        inputAssembly.primitiveRestartEnable =
+            VK_FALSE;
+
+        // =========================================
+        // VIEWPORT
+        // =========================================
+
+        VkPipelineViewportStateCreateInfo viewportState{};
+        viewportState.sType =
+            VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+
+        viewportState.viewportCount = 1;
+        viewportState.scissorCount  = 1;
+
+        // =========================================
+        // RASTERIZER
+        // =========================================
+
+        VkPipelineRasterizationStateCreateInfo rasterizer{};
+        rasterizer.sType =
+            VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+
+        rasterizer.depthClampEnable        = VK_FALSE;
+        rasterizer.rasterizerDiscardEnable = VK_FALSE;
+
+        rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+
+        rasterizer.lineWidth = 1.0f;
+
+        rasterizer.cullMode = VK_CULL_MODE_NONE;
+
+        rasterizer.frontFace =
+            VK_FRONT_FACE_COUNTER_CLOCKWISE;
+
+        rasterizer.depthBiasEnable = VK_FALSE;
+
+        // =========================================
+        // MULTISAMPLING
+        // =========================================
+
+        VkPipelineMultisampleStateCreateInfo multisampling{};
+        multisampling.sType =
+            VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+
+        multisampling.sampleShadingEnable = VK_FALSE;
+
+        multisampling.rasterizationSamples =
+            VK_SAMPLE_COUNT_1_BIT;
+
+        // =========================================
+        // DEPTH
+        // =========================================
+
+        VkPipelineDepthStencilStateCreateInfo depthStencil{};
+        depthStencil.sType =
+            VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+
+        depthStencil.depthTestEnable = VK_TRUE;
+
+        // partículas normalmente não escrevem depth
+        depthStencil.depthWriteEnable = VK_FALSE;
+
+        depthStencil.depthCompareOp =
+            VK_COMPARE_OP_LESS;
+
+        depthStencil.depthBoundsTestEnable =
+            VK_FALSE;
+
+        depthStencil.stencilTestEnable =
+            VK_FALSE;
+
+        // =========================================
+        // BLENDING
+        // =========================================
+
+        VkPipelineColorBlendAttachmentState colorBlendAttachment{};
+
+        colorBlendAttachment.colorWriteMask =
+            VK_COLOR_COMPONENT_R_BIT |
+            VK_COLOR_COMPONENT_G_BIT |
+            VK_COLOR_COMPONENT_B_BIT |
+            VK_COLOR_COMPONENT_A_BIT;
+
+        // alpha blending
+        colorBlendAttachment.blendEnable = VK_TRUE;
+
+        colorBlendAttachment.srcColorBlendFactor =
+            VK_BLEND_FACTOR_SRC_ALPHA;
+
+        colorBlendAttachment.dstColorBlendFactor =
+            VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+
+        colorBlendAttachment.colorBlendOp =
+            VK_BLEND_OP_ADD;
+
+        colorBlendAttachment.srcAlphaBlendFactor =
+            VK_BLEND_FACTOR_ONE;
+
+        colorBlendAttachment.dstAlphaBlendFactor =
+            VK_BLEND_FACTOR_ZERO;
+
+        colorBlendAttachment.alphaBlendOp =
+            VK_BLEND_OP_ADD;
+
+        VkPipelineColorBlendStateCreateInfo colorBlending{};
+        colorBlending.sType =
+            VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+
+        colorBlending.logicOpEnable = VK_FALSE;
+
+        colorBlending.attachmentCount = 1;
+        colorBlending.pAttachments =
+            &colorBlendAttachment;
+
+        // =========================================
+        // DYNAMIC STATES
+        // =========================================
+
+        std::vector<VkDynamicState> dynamicStates = {
+            VK_DYNAMIC_STATE_VIEWPORT,
+            VK_DYNAMIC_STATE_SCISSOR
+        };
+
+        VkPipelineDynamicStateCreateInfo dynamicState{};
+        dynamicState.sType =
+            VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+
+        dynamicState.dynamicStateCount =
+            static_cast<uint32_t>(dynamicStates.size());
+
+        dynamicState.pDynamicStates =
+            dynamicStates.data();
+
+        // =========================================
+        // PIPELINE LAYOUT
+        // =========================================
+
+        VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+        pipelineLayoutInfo.sType =
+            VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+
+        pipelineLayoutInfo.setLayoutCount = 1;
+
+        pipelineLayoutInfo.pSetLayouts =
+            &descriptorSetLayout;
+
+        if (vkCreatePipelineLayout(
+                device,
+                &pipelineLayoutInfo,
+                nullptr,
+                &texturedPointPipelineLayout
+            ) != VK_SUCCESS) {
+
+            throw std::runtime_error(
+                "failed to create textured point pipeline layout!"
+            );
+        }
+
+        // =========================================
+        // GRAPHICS PIPELINE
+        // =========================================
+
+        VkGraphicsPipelineCreateInfo pipelineInfo{};
+        pipelineInfo.sType =
+            VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+
+        pipelineInfo.stageCount = 2;
+        pipelineInfo.pStages = shaderStages;
+
+        pipelineInfo.pVertexInputState =
+            &vertexInputInfo;
+
+        pipelineInfo.pInputAssemblyState =
+            &inputAssembly;
+
+        pipelineInfo.pViewportState =
+            &viewportState;
+
+        pipelineInfo.pRasterizationState =
+            &rasterizer;
+
+        pipelineInfo.pMultisampleState =
+            &multisampling;
+
+        pipelineInfo.pDepthStencilState =
+            &depthStencil;
+
+        pipelineInfo.pColorBlendState =
+            &colorBlending;
+
+        pipelineInfo.pDynamicState =
+            &dynamicState;
+
+        pipelineInfo.layout =
+            texturedPointPipelineLayout;
+
+        pipelineInfo.renderPass =
+            renderPass;
+
+        pipelineInfo.subpass = 0;
+
+        pipelineInfo.basePipelineHandle =
+            VK_NULL_HANDLE;
+
+        if (vkCreateGraphicsPipelines(
+                device,
+                VK_NULL_HANDLE,
+                1,
+                &pipelineInfo,
+                nullptr,
+                &texturedPointPipeline
+            ) != VK_SUCCESS) {
+
+            throw std::runtime_error(
+                "failed to create textured point graphics pipeline!"
+            );
+        }
+
+        vkDestroyShaderModule(
+            device,
+            fragShaderModule,
+            nullptr
+        );
+
+        vkDestroyShaderModule(
+            device,
+            vertShaderModule,
+            nullptr
+        );
+    }
+
     void createFramebuffers() {
         swapChainFramebuffers.resize(swapChainImageViews.size());
 
@@ -1246,28 +1647,14 @@ private:
         endSingleTimeCommands(commandBuffer);
     }
 
-    void createVertexBuffer() {
-        VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
-
-        VkBuffer stagingBuffer;
-        VkDeviceMemory stagingBufferMemory;
-        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
-
-        void* data;
-        vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
-            memcpy(data, vertices.data(), (size_t) bufferSize);
-        vkUnmapMemory(device, stagingBufferMemory);
-
-        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertexBuffer, vertexBufferMemory);
-
-        copyBuffer(stagingBuffer, vertexBuffer, bufferSize);
-
-        vkDestroyBuffer(device, stagingBuffer, nullptr);
-        vkFreeMemory(device, stagingBufferMemory, nullptr);
-    }
-
-    void createParticleVertexBuffer() {
-        VkDeviceSize bufferSize = sizeof(particles[0]) * MAX_PARTICLES;
+    template<typename T>
+    void createGenericVertexBuffer(
+        const T* srcData,
+        size_t elementCount,
+        VkBuffer& dstBuffer,
+        VkDeviceMemory& dstBufferMemory
+    ) {
+        VkDeviceSize bufferSize = sizeof(T) * elementCount;
 
         VkBuffer stagingBuffer;
         VkDeviceMemory stagingBufferMemory;
@@ -1275,25 +1662,67 @@ private:
         createBuffer(
             bufferSize,
             VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
             stagingBuffer,
             stagingBufferMemory
         );
 
         void* data;
         vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
-            memcpy(data, particles.data(), (size_t)bufferSize);
+            memcpy(data, srcData, (size_t)bufferSize);
         vkUnmapMemory(device, stagingBufferMemory);
 
         createBuffer(
             bufferSize,
-            VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+            VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-            particlesVertexBuffer,
-            particlesVertexBufferMemory
+            dstBuffer,
+            dstBufferMemory
         );
 
-        copyBuffer(stagingBuffer, particlesVertexBuffer, bufferSize);
+        copyBuffer(stagingBuffer, dstBuffer, bufferSize);
+
+        vkDestroyBuffer(device, stagingBuffer, nullptr);
+        vkFreeMemory(device, stagingBufferMemory, nullptr);
+    }
+
+    template<typename T>
+    void updateGenericVertexBuffer(
+        const T* srcData,
+        size_t usedCount,
+        size_t maxCount,
+        VkBuffer& dstBuffer
+    ) {
+        VkDeviceSize bufferSize = sizeof(T) * maxCount;
+        VkDeviceSize usedSize   = sizeof(T) * usedCount;
+
+        VkBuffer stagingBuffer;
+        VkDeviceMemory stagingBufferMemory;
+
+        createBuffer(
+            bufferSize,
+            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+            stagingBuffer,
+            stagingBufferMemory
+        );
+
+        void* data;
+        vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
+
+            memcpy(data, srcData, usedSize);
+
+            // limpa o resto do buffer
+            if (usedSize < bufferSize) {
+                memset((char*)data + usedSize, 0, bufferSize - usedSize);
+            }
+
+        vkUnmapMemory(device, stagingBufferMemory);
+
+        copyBuffer(stagingBuffer, dstBuffer, bufferSize);
 
         vkDestroyBuffer(device, stagingBuffer, nullptr);
         vkFreeMemory(device, stagingBufferMemory, nullptr);
@@ -1302,230 +1731,86 @@ private:
     float randf() {
     return (float) rand() / RAND_MAX;
 }
-    void createBulletsVertexBuffer() {
-        VkDeviceSize bufferSize = sizeof(PointVertex) * MAX_PARTICLES;
 
-        VkBuffer stagingBuffer;
-        VkDeviceMemory stagingBufferMemory;
+    void simulateParticles() {
+        for (int i = 0; i < particles.size(); ) {
 
-        createBuffer(
-            bufferSize,
-            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            stagingBuffer,
-            stagingBufferMemory
-        );
+            // diminuir vida
+            particles[i].life -= 0.01;
 
-        void* data;
-        vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
-            memcpy(data, bullets.data(), (size_t)bufferSize);
-        vkUnmapMemory(device, stagingBufferMemory);
+            // fade (opcional mas MUITO importante visualmente)
+            particles[i].size *= particles[i].life;
 
-        createBuffer(
-            bufferSize,
-            VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-            bulletVertexBuffer,
-            bulletVertexBufferMemory
-        );
-
-        copyBuffer(stagingBuffer, bulletVertexBuffer, bufferSize);
-
-        vkDestroyBuffer(device, stagingBuffer, nullptr);
-        vkFreeMemory(device, stagingBufferMemory, nullptr);
-    }
-
-void simulateParticles() {
-    for (int i = 0; i < particles.size(); ) {
-
-        // diminuir vida
-        particles[i].life -= 0.01;
-
-        // fade (opcional mas MUITO importante visualmente)
-        particles[i].size *= particles[i].life;
-
-        // remover se morreu
-        if (particles[i].life <= 0.0f) {
-            particles.erase(particles.begin() + i);
-        } else {
-            i++;
+            // remover se morreu
+            if (particles[i].life <= 0.0f) {
+                particles.erase(particles.begin() + i);
+            } else {
+                i++;
+            }
         }
     }
-}
 
-void shootBullet(glm::vec3 shipPos, glm::vec3 forward) {
-    PointVertex bullet;
+    void shootBullet(glm::vec3 shipPos, glm::vec3 forward) {
+        PointVertex bullet;
 
-    bullet.pos = shipPos + forward * 0.5f;
-    bullet.velocity = forward * 8.0f;
-    bullet.size = 0.4;
+        bullet.pos = shipPos + forward * 0.5f;
+        bullet.velocity = forward * 8.0f;
+        bullet.size = 0.4;
 
-    bullet.color = glm::vec4(0.2f, 0.6f, 1.0f, 1.0f);
+        bullet.color = glm::vec4(0.2f, 0.6f, 1.0f, 1.0f);
 
-    bullet.life = 2.0f;
+        bullet.life = 2.0f;
 
-    bullets.push_back(bullet);
-}
+        bullets.push_back(bullet);
+    }
 
-void updateBullets(float deltaTime) {
+    void updateBullets(float deltaTime) {
 
-    for (size_t i = 0; i < bullets.size();) {
+        for (size_t i = 0; i < bullets.size();) {
 
-        bullets[i].pos += bullets[i].velocity * deltaTime;
+            bullets[i].pos += bullets[i].velocity * deltaTime;
 
-        bullets[i].life -= 0.01;
+            bullets[i].life -= 0.01;
 
-        if (bullets[i].life <= 0.0f) {
-            bullets.erase(bullets.begin() + i);
-        } else {
-            ++i;
+            if (bullets[i].life <= 0.0f) {
+                bullets.erase(bullets.begin() + i);
+            } else {
+                ++i;
+            }
         }
+        updateGenericVertexBuffer(
+            bullets.data(),
+            bullets.size(),
+            MAX_PARTICLES,
+            bulletVertexBuffer
+        );
     }
-    updateBulletVertexBuffer();
-}
 
-glm::vec3 randomInCone(glm::vec3 dir, float angle, float length) {
-    // gera direção aleatória dentro de um cone
-    float u = randf();
-    float v = randf();
+    glm::vec3 randomInCone(glm::vec3 dir, float angle, float length) {
+        // gera direção aleatória dentro de um cone
+        float u = randf();
+        float v = randf();
 
-    float theta = u * 2.0f * M_PI;
-    float phi = angle * sqrt(v);
+        float theta = u * 2.0f * M_PI;
+        float phi = angle * sqrt(v);
 
-    // base (cone no eixo Z)
-    glm::vec3 localDir(
-        sin(phi) * cos(theta),
-        sin(phi) * sin(theta),
-        cos(phi)
-    );
-
-    // alinhar com direção da nave
-    glm::vec3 up = abs(dir.z) < 0.999f ? glm::vec3(0,0,1) : glm::vec3(0,1,0);
-    glm::vec3 right = glm::normalize(glm::cross(up, dir));
-    glm::vec3 forward = glm::normalize(dir);
-    glm::vec3 newUp = glm::cross(forward, right);
-
-    glm::mat3 basis(right, newUp, forward);
-
-    return basis * localDir * length;
-}
-
-    void createPointVertexBuffer() {
-        VkDeviceSize bufferSize = sizeof(points[0]) * MAX_STARS;
-
-        VkBuffer stagingBuffer;
-        VkDeviceMemory stagingBufferMemory;
-
-        createBuffer(
-            bufferSize,
-            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            stagingBuffer,
-            stagingBufferMemory
+        // base (cone no eixo Z)
+        glm::vec3 localDir(
+            sin(phi) * cos(theta),
+            sin(phi) * sin(theta),
+            cos(phi)
         );
 
-        void* data;
-        vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
-            memcpy(data, points.data(), (size_t)bufferSize);
-        vkUnmapMemory(device, stagingBufferMemory);
+        // alinhar com direção da nave
+        glm::vec3 up = abs(dir.z) < 0.999f ? glm::vec3(0,0,1) : glm::vec3(0,1,0);
+        glm::vec3 right = glm::normalize(glm::cross(up, dir));
+        glm::vec3 forward = glm::normalize(dir);
+        glm::vec3 newUp = glm::cross(forward, right);
 
-        createBuffer(
-            bufferSize,
-            VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-            pointVertexBuffer,
-            pointVertexBufferMemory
-        );
+        glm::mat3 basis(right, newUp, forward);
 
-        copyBuffer(stagingBuffer, pointVertexBuffer, bufferSize);
-
-        vkDestroyBuffer(device, stagingBuffer, nullptr);
-        vkFreeMemory(device, stagingBufferMemory, nullptr);
+        return basis * localDir * length;
     }
-
-    void UpdateVertexBuffer(){
-        VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
-
-        VkBuffer stagingBuffer;
-        VkDeviceMemory stagingBufferMemory;
-        createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
-
-        void* data;
-        vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
-        memcpy(data, vertices.data(), (size_t) bufferSize);
-        vkUnmapMemory(device, stagingBufferMemory);
-
-        copyBuffer(stagingBuffer, vertexBuffer, bufferSize);
-
-        vkDestroyBuffer(device, stagingBuffer, nullptr);
-        vkFreeMemory(device, stagingBufferMemory, nullptr);
-    }
-
-    void updatePointVertexBuffer() {
-        VkDeviceSize bufferSize = sizeof(points[0]) * MAX_STARS;
-
-        VkBuffer stagingBuffer;
-        VkDeviceMemory stagingBufferMemory;
-
-        createBuffer( bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
-
-        void* data;
-        vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
-        memcpy(data, points.data(), (size_t)bufferSize);
-        vkUnmapMemory(device, stagingBufferMemory);
-
-        copyBuffer(stagingBuffer, pointVertexBuffer, bufferSize);
-
-        vkDestroyBuffer(device, stagingBuffer, nullptr);
-        vkFreeMemory(device, stagingBufferMemory, nullptr);
-    }
-
-    void updateParticleVertexBuffer() {
-        VkDeviceSize bufferSize = sizeof(particles[0]) * MAX_PARTICLES;
-
-        VkBuffer stagingBuffer;
-        VkDeviceMemory stagingBufferMemory;
-
-        createBuffer( bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
-
-        void* data;
-        vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
-        VkDeviceSize usedSize = sizeof(particles[0]) * particles.size();
-
-        memcpy(data, particles.data(), usedSize);
-        memset((char*)data + usedSize, 0, bufferSize - usedSize);
-
-        vkUnmapMemory(device, stagingBufferMemory);
-
-        copyBuffer(stagingBuffer, particlesVertexBuffer, bufferSize);
-
-        vkDestroyBuffer(device, stagingBuffer, nullptr);
-        vkFreeMemory(device, stagingBufferMemory, nullptr);
-    }
-
-    void updateBulletVertexBuffer() {
-        VkDeviceSize bufferSize = sizeof(PointVertex) * MAX_PARTICLES;
-
-        VkBuffer stagingBuffer;
-        VkDeviceMemory stagingBufferMemory;
-
-        createBuffer( bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
-
-        void* data;
-        vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
-        VkDeviceSize usedSize = sizeof(PointVertex) * bullets.size();
-
-        memcpy(data, bullets.data(), usedSize);
-        memset((char*)data + usedSize, 0, bufferSize - usedSize);
-
-        vkUnmapMemory(device, stagingBufferMemory);
-
-        copyBuffer(stagingBuffer, bulletVertexBuffer, bufferSize);
-
-        vkDestroyBuffer(device, stagingBuffer, nullptr);
-        vkFreeMemory(device, stagingBufferMemory, nullptr);
-    }
-
     glm::vec3 randomPointInSphere(float radius) {
         float u = ((float) rand() / RAND_MAX);
         float v = ((float) rand() / RAND_MAX);
@@ -1535,25 +1820,25 @@ glm::vec3 randomInCone(glm::vec3 dir, float angle, float length) {
 
         float x = r * sin(phi) * cos(theta);
         float y = r * sin(phi) * sin(theta);
-        float z = r * cos(phi);
+        float z = r * cos(phi)*2;
 
         return glm::vec3(x, y, z);
     }
 
-    void updatePoints() {
+    void updatestars() {
         glm::vec3 shipPos = glm::vec3(posX[0], posY[0], posZ[0]);
 
-        float maxDistance = 80.0f;
-        float spawnRadius = 80.0f;
+        float maxDistance = 1000.0f;
+        float spawnRadius = 200.0f;
 
         bool changed = false;
 
         // REMOVER pontos longe
-        for (int i = 0; i < points.size(); ) {
-            float dist = glm::distance(points[i].pos, shipPos);
+        for (int i = 0; i < stars.size(); ) {
+            float dist = glm::distance(stars[i].pos, shipPos);
 
             if (dist > maxDistance) {
-                points.erase(points.begin() + i);
+                stars.erase(stars.begin() + i);
                 changed = true;
             } else {
                 i++;
@@ -1561,24 +1846,118 @@ glm::vec3 randomInCone(glm::vec3 dir, float angle, float length) {
         }
 
         // GERAR novos pontos
-        while (points.size() < MAX_STARS) {
+        while (stars.size() < MAX_STARS) {
             glm::vec3 offset = randomPointInSphere(spawnRadius);
 
             PointVertex p;
             p.pos = shipPos + offset;
 
-            p.size = 2.0f + ((float)rand() / RAND_MAX) * 3.0f;
+            p.size = 70.0f + ((float)rand() / RAND_MAX) * 70.0f;
 
             float c = 0.7f + ((float)rand() / RAND_MAX) * 0.3f;
             p.color = glm::vec3(c, c, c);
 
-            points.push_back(p);
+            stars.push_back(p);
             changed = true;
         }
 
         // UPDATE GPU
         if (changed) {
-            updatePointVertexBuffer();
+            updateGenericVertexBuffer(
+                stars.data(),
+                stars.size(),
+                MAX_STARS,
+                pointVertexBuffer
+            );
+        }
+    }
+
+    void updateMeteoros() {
+
+        glm::vec3 shipPos = glm::vec3(posX[0], posY[0], posZ[0]);
+
+        float maxDistance = 200.0f;
+        float spawnRadius = 50.0f;
+
+        bool changed = false;
+
+        // =========================================
+        // REMOVE METEOROS DISTANTES E MORTOS
+        // =========================================
+
+        for (int i = 0; i < meteors.size(); ) {
+
+            float dist = glm::distance(meteors[i].pos, shipPos);
+
+            if (dist > maxDistance) {
+
+                meteors.erase(meteors.begin() + i);
+
+                changed = true;
+
+            } else if(meteors[i].life <= 0){
+                meteors.erase(meteors.begin() + i);
+            } else {
+
+                i++;
+            }
+        }
+
+        // =========================================
+        // GERA NOVOS METEOROS
+        // =========================================
+
+        while (meteors.size() < MAX_METEORS) {
+
+            glm::vec3 offset =
+                randomPointInSphere(spawnRadius);
+
+            PointTextVertex meteor{};
+
+            meteor.pos =
+                shipPos + offset;
+
+            // tamanho do sprite
+            meteor.size = 10.0f;
+            // UV não é necessário para gl_PointCoord
+            meteor.texCoord =
+                glm::vec2(0.0f);
+
+            meteor.life = 100.0f;
+
+            meteor.velocity =
+                glm::vec3(
+                    ((float)rand() / RAND_MAX - 0.5f) * 0.1f,
+                    ((float)rand() / RAND_MAX - 0.5f) * 0.1f,
+                    ((float)rand() / RAND_MAX - 0.5f) * 0.1f
+                );
+
+            meteors.push_back(meteor);
+
+            changed = true;
+        }
+
+        // =========================================
+        // MOVIMENTO DOS METEOROS
+        // =========================================
+
+        for (auto& meteor : meteors) {
+
+            meteor.pos += meteor.velocity;
+        }
+
+        // =========================================
+        // UPDATE GPU
+        // =========================================
+
+        if (changed) {
+
+            updateGenericVertexBuffer(
+                meteors.data(),
+                meteors.size(),
+                MAX_METEORS,
+                texturedPointVertexBuffer
+            );
         }
     }
 
@@ -1870,7 +2249,7 @@ glm::vec3 randomInCone(glm::vec3 dir, float angle, float length) {
             VkDeviceSize poffsets[] = {0};
             vkCmdBindVertexBuffers(commandBuffer, 0, 1, buffers, poffsets);
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pointPipelineLayout, 0, 1, &descriptorSets[currentFrame], 0, nullptr);
-            vkCmdDraw(commandBuffer, static_cast<uint32_t>(points.size()), 1, 0, 0);
+            vkCmdDraw(commandBuffer, static_cast<uint32_t>(stars.size()), 1, 0, 0);
 
             vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pointPipeline);
             VkBuffer bufferss[] = {particlesVertexBuffer};
@@ -1885,6 +2264,48 @@ glm::vec3 randomInCone(glm::vec3 dir, float angle, float length) {
             vkCmdBindVertexBuffers(commandBuffer, 0, 1, buffersss, poffsetsss);
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pointPipelineLayout, 0, 1, &descriptorSets[currentFrame], 0, nullptr);
             vkCmdDraw(commandBuffer, static_cast<uint32_t>(bullets.size()), 1, 0, 0);
+            // =========================================
+            // METEOROS TEXTURIZADOS
+            // =========================================
+
+            vkCmdBindPipeline(
+                commandBuffer,
+                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                texturedPointPipeline
+            );
+
+            VkBuffer meteorBuffers[] = {
+                texturedPointVertexBuffer
+            };
+
+            VkDeviceSize meteorOffsets[] = {0};
+
+            vkCmdBindVertexBuffers(
+                commandBuffer,
+                0,
+                1,
+                meteorBuffers,
+                meteorOffsets
+            );
+
+            vkCmdBindDescriptorSets(
+                commandBuffer,
+                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                texturedPointPipelineLayout,
+                0,
+                1,
+                &descriptorSets[currentFrame],
+                0,
+                nullptr
+            );
+
+            vkCmdDraw(
+                commandBuffer,
+                static_cast<uint32_t>(meteors.size()),
+                1,
+                0,
+                0
+            );
 
         vkCmdEndRenderPass(commandBuffer);
 
