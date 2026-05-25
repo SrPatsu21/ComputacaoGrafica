@@ -436,6 +436,9 @@ private:
 
             glfwPollEvents();
 
+            checkShipCollisions();
+            checkBulletMeteorCollisions();
+
             updatestars();
             updateMeteoros();
             simulateParticles();
@@ -1871,7 +1874,7 @@ private:
 
             float dist = glm::distance(meteors[i].pos, shipPos);
 
-            if (dist > maxDistance) {
+            if (dist > maxDistance || meteors[i].life < 0) {
 
                 meteors.erase(meteors.begin() + i);
 
@@ -1968,6 +1971,185 @@ private:
         } else {
             // sobrescreve (ring buffer simples)
             particles[rand() % MAX_PARTICLES] = p;
+        }
+    }
+
+    void checkBulletMeteorCollisions() {
+        for (auto& bullet : bullets) {
+
+            for (auto& meteor : meteors) {
+
+                // meteoro destruído
+                // if (meteor.life <= 0.0f)
+                //     continue;
+
+                glm::vec3 diff = bullet.pos - meteor.pos;
+
+                float distSq = glm::dot(diff, diff);
+
+                float radius = bullet.size + meteor.size;
+
+                if (distSq <= radius * radius) {
+
+                    // dano
+                    meteor.life -= 100.0f;
+
+                    // destrói bala
+                    bullet.life = 0.0f;
+
+                    break;
+                }
+            }
+        }
+    }
+    bool sphereTriangleCollision(
+        const glm::vec3& center,
+        float radius,
+        const glm::vec3& a,
+        const glm::vec3& b,
+        const glm::vec3& c)
+    {
+        glm::vec3 ab = b - a;
+        glm::vec3 ac = c - a;
+
+        glm::vec3 normal = glm::normalize(glm::cross(ab, ac));
+
+        float distance = glm::dot(center - a, normal);
+
+        // esfera longe do plano
+        if (std::abs(distance) > radius)
+            return false;
+
+        // projeta no plano
+        glm::vec3 point = center - normal * distance;
+
+        // barycentric
+        glm::vec3 v0 = b - a;
+        glm::vec3 v1 = c - a;
+        glm::vec3 v2 = point - a;
+
+        float d00 = glm::dot(v0, v0);
+        float d01 = glm::dot(v0, v1);
+        float d11 = glm::dot(v1, v1);
+        float d20 = glm::dot(v2, v0);
+        float d21 = glm::dot(v2, v1);
+
+        float denom = d00 * d11 - d01 * d01;
+
+        float v = (d11 * d20 - d01 * d21) / denom;
+        float w = (d00 * d21 - d01 * d20) / denom;
+        float u = 1.0f - v - w;
+
+        return (u >= 0 && v >= 0 && w >= 0);
+    }
+
+    void checkShipCollisions() {
+
+        glm::vec3 shipPos = {
+            posX[0],
+            posY[0],
+            posZ[0]
+        };
+
+        // pré-hitbox da nave
+        float shipRadius = 0.5f;
+
+        // modelo para teste em triangulos
+        glm::mat4 model = glm::mat4(1.0f);
+
+        model = glm::translate(model, {
+            posX[0],
+            posY[0],
+            posZ[0]
+        });
+
+        model = glm::rotate(model, rotX[0], glm::vec3(1,0,0));
+        model = glm::rotate(model, rotY[0], glm::vec3(0,1,0));
+        model = glm::rotate(model, rotZ[0], glm::vec3(0,0,1));
+
+        model = glm::scale(model, glm::vec3(scale[0]));
+
+        std::vector<glm::vec3> transformedVertices;
+
+        for (auto& v : vertices) {
+
+            glm::vec4 p = model * glm::vec4(v.pos, 1.0f);
+
+            transformedVertices.push_back(glm::vec3(p));
+        }
+
+        // =========================
+        // METEOROS
+        // =========================
+        for (auto& meteor : meteors) {
+
+            if (meteor.life <= 0.0f)
+                continue;
+
+            glm::vec3 diff = shipPos - meteor.pos;
+
+            float distSq = glm::dot(diff, diff);
+
+            float radius = shipRadius + meteor.size;
+
+            // BROAD PHASE
+            if (distSq <= radius * radius) {
+                std::cout << meteor.pos.x << "," << meteor.pos.y << "," << meteor.pos.z;
+                std::cout << " talvez  colidiu com meteoro\n";
+
+                for (size_t i = 0; i < indices.size(); i += 3) {
+
+                    glm::vec3 a = transformedVertices[indices[i]];
+                    glm::vec3 b = transformedVertices[indices[i + 1]];
+                    glm::vec3 c = transformedVertices[indices[i + 2]];
+
+                    if (sphereTriangleCollision(
+                            meteor.pos,
+                            meteor.size,
+                            a, b, c))
+                    {
+                        std::cout << " MORREU PRO METEORO\n";
+
+                        return;
+                    }
+                }
+            }
+        }
+
+        // =========================
+        // ESTRELAS
+        // =========================
+        for (auto& star : stars) {
+
+            glm::vec3 diff = shipPos - star.pos;
+
+            float distSq = glm::dot(diff, diff);
+
+            float radius = shipRadius + star.size;
+
+            // BROAD PHASE
+            if (distSq <= radius * radius) {
+
+                std::cout << star.pos.x << "," << star.pos.y << "," << star.pos.z;
+                std::cout << " talvez  colidiu com estrela\n";
+
+                for (size_t i = 0; i < indices.size(); i += 3) {
+
+                glm::vec3 a = transformedVertices[indices[i]];
+                glm::vec3 b = transformedVertices[indices[i + 1]];
+                glm::vec3 c = transformedVertices[indices[i + 2]];
+
+                if (sphereTriangleCollision(
+                        star.pos,
+                        star.size,
+                        a, b, c))
+                {
+                    std::cout << " MORREU PARA A ESTRELA\n";
+
+                    return;
+                }
+            }
+            }
         }
     }
 
