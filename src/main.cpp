@@ -1040,7 +1040,7 @@ private:
         VkPipelineDepthStencilStateCreateInfo depthStencil{};
         depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
         depthStencil.depthTestEnable = VK_TRUE;
-        depthStencil.depthWriteEnable = VK_FALSE;
+        depthStencil.depthWriteEnable = VK_TRUE;
         depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
         depthStencil.depthBoundsTestEnable = VK_FALSE;
         depthStencil.stencilTestEnable = VK_FALSE;
@@ -1222,16 +1222,13 @@ private:
         depthStencil.depthTestEnable = VK_TRUE;
 
         // partículas normalmente não escrevem depth
-        depthStencil.depthWriteEnable = VK_FALSE;
+        depthStencil.depthWriteEnable = VK_TRUE;
 
-        depthStencil.depthCompareOp =
-            VK_COMPARE_OP_LESS;
+        depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
 
-        depthStencil.depthBoundsTestEnable =
-            VK_FALSE;
+        depthStencil.depthBoundsTestEnable = VK_FALSE;
 
-        depthStencil.stencilTestEnable =
-            VK_FALSE;
+        depthStencil.stencilTestEnable = VK_FALSE;
 
         // =========================================
         // BLENDING
@@ -1247,31 +1244,16 @@ private:
 
         // alpha blending
         colorBlendAttachment.blendEnable = VK_TRUE;
-
-        colorBlendAttachment.srcColorBlendFactor =
-            VK_BLEND_FACTOR_SRC_ALPHA;
-
-        colorBlendAttachment.dstColorBlendFactor =
-            VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-
-        colorBlendAttachment.colorBlendOp =
-            VK_BLEND_OP_ADD;
-
-        colorBlendAttachment.srcAlphaBlendFactor =
-            VK_BLEND_FACTOR_ONE;
-
-        colorBlendAttachment.dstAlphaBlendFactor =
-            VK_BLEND_FACTOR_ZERO;
-
-        colorBlendAttachment.alphaBlendOp =
-            VK_BLEND_OP_ADD;
+        colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+        colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+        colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+        colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
 
         VkPipelineColorBlendStateCreateInfo colorBlending{};
-        colorBlending.sType =
-            VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-
+        colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
         colorBlending.logicOpEnable = VK_FALSE;
-
         colorBlending.attachmentCount = 1;
         colorBlending.pAttachments =
             &colorBlendAttachment;
@@ -1950,15 +1932,12 @@ private:
         // UPDATE GPU
         // =========================================
 
-        if (changed) {
-
-            updateGenericVertexBuffer(
-                meteors.data(),
-                meteors.size(),
-                MAX_METEORS,
-                texturedPointVertexBuffer
-            );
-        }
+        updateGenericVertexBuffer(
+            meteors.data(),
+            meteors.size(),
+            MAX_METEORS,
+            texturedPointVertexBuffer
+        );
     }
 
     void spawnParticle(glm::vec3 shipPos, glm::vec3 shipDir) {
@@ -2268,44 +2247,14 @@ private:
             // METEOROS TEXTURIZADOS
             // =========================================
 
-            vkCmdBindPipeline(
-                commandBuffer,
-                VK_PIPELINE_BIND_POINT_GRAPHICS,
-                texturedPointPipeline
-            );
+            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, texturedPointPipeline);
 
-            VkBuffer meteorBuffers[] = {
-                texturedPointVertexBuffer
-            };
+            VkBuffer meteorBuffers[] = {texturedPointVertexBuffer };
 
             VkDeviceSize meteorOffsets[] = {0};
-
-            vkCmdBindVertexBuffers(
-                commandBuffer,
-                0,
-                1,
-                meteorBuffers,
-                meteorOffsets
-            );
-
-            vkCmdBindDescriptorSets(
-                commandBuffer,
-                VK_PIPELINE_BIND_POINT_GRAPHICS,
-                texturedPointPipelineLayout,
-                0,
-                1,
-                &descriptorSets[currentFrame],
-                0,
-                nullptr
-            );
-
-            vkCmdDraw(
-                commandBuffer,
-                static_cast<uint32_t>(meteors.size()),
-                1,
-                0,
-                0
-            );
+            vkCmdBindVertexBuffers(commandBuffer, 0, 1, meteorBuffers, meteorOffsets);
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, texturedPointPipelineLayout, 0, 1, &descriptorSets[currentFrame], 0, nullptr);
+            vkCmdDraw(commandBuffer, static_cast<uint32_t>(meteors.size()), 1, 0, 0);
 
         vkCmdEndRenderPass(commandBuffer);
 
