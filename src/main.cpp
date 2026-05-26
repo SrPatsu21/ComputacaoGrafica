@@ -2571,10 +2571,10 @@ private:
 
         // PROJEÇÃO
         ubo.proj = glm::perspective(
-            glm::radians(45.0f),
+            glm::radians(60.0f),
             swapChainExtent.width / (float) swapChainExtent.height,
             0.1f,
-            100.0f
+            500.0f
         );
 
         ubo.proj[1][1] *= -1;
