@@ -211,7 +211,7 @@ std::vector<Vertex> vertices = {
     {{ 0.0f, -0.5f, 0.3f}, {0, 0, 1}, {0, 0}} // frente
 };
 
-const std::vector<uint16_t> indices = {
+std::vector<uint16_t> indices = {
     0, 1, 2,
     0, 2, 3,
     0, 3, 4,
@@ -219,6 +219,102 @@ const std::vector<uint16_t> indices = {
     1, 2, 3,
     3, 1, 4
 };
+
+void generateCylinder(float radius, float height, int segments,
+                      std::vector<Vertex>& outVertices,
+                      std::vector<uint16_t>& outIndices)
+{
+    outVertices.clear();
+    outIndices.clear();
+    if (segments < 3) segments = 3;
+    const float halfH = height * 0.5f;
+    const float TWO_PI = 2.0f * 3.14159265358979323846f;
+
+    // top and bottom centers
+    Vertex topCenter{ {0.0f,  halfH, 0.0f}, {1.0f,1.0f,1.0f}, {0.5f, 0.5f} };
+    Vertex bottomCenter{ {0.0f, -halfH, 0.0f}, {1.0f,1.0f,1.0f}, {0.5f, 0.5f} };
+    outVertices.push_back(topCenter);    // idx 0
+    outVertices.push_back(bottomCenter); // idx 1
+
+    // rim vertices (interleaved: top0, bottom0, top1, bottom1, ...)
+    for (int i = 0; i < segments; ++i) {
+        float t = float(i) / float(segments);
+        float theta = t * TWO_PI;
+        float cx = std::cos(theta);
+        float cz = std::sin(theta);
+
+        Vertex vt;
+        vt.pos = glm::vec3(radius * cx,  halfH, radius * cz);
+        vt.color = glm::vec3(0.8f);
+        vt.texCoord = glm::vec2(0.5f + 0.5f * cx, 0.5f - 0.5f * cz);
+        outVertices.push_back(vt);
+
+        Vertex vb;
+        vb.pos = glm::vec3(radius * cx, -halfH, radius * cz);
+        vb.color = glm::vec3(0.8f);
+        vb.texCoord = glm::vec2(0.5f + 0.5f * cx, 0.5f + 0.5f * cz);
+        outVertices.push_back(vb);
+    }
+
+    const uint16_t idxTopCenter = 0;
+    const uint16_t idxBottomCenter = 1;
+    const uint16_t firstRim = 2; // top0 at 2, bottom0 at 3, top1 at 4, ...
+
+    // top cap (triangle fan)
+    for (int i = 0; i < segments; ++i) {
+        uint16_t a = firstRim + uint16_t(2 * i);                      // top i
+        uint16_t b = firstRim + uint16_t(2 * ((i + 1) % segments));   // top i+1
+        outIndices.push_back(idxTopCenter);
+        outIndices.push_back(a);
+        outIndices.push_back(b);
+    }
+
+    // bottom cap (triangle fan, reversed winding)
+    for (int i = 0; i < segments; ++i) {
+        uint16_t a = firstRim + uint16_t(2 * i + 1);                      // bottom i
+        uint16_t b = firstRim + uint16_t(2 * ((i + 1) % segments) + 1);   // bottom i+1
+        outIndices.push_back(idxBottomCenter);
+        outIndices.push_back(b);
+        outIndices.push_back(a);
+    }
+
+    // side vertices (separate so normals/uvs per-face work). append pairs (top,bottom)
+    uint16_t sideStart = uint16_t(outVertices.size());
+    for (int i = 0; i < segments; ++i) {
+        float t = float(i) / float(segments);
+        float theta = t * TWO_PI;
+        float cx = std::cos(theta);
+        float cz = std::sin(theta);
+
+        Vertex st;
+        st.pos = glm::vec3(radius * cx,  halfH, radius * cz);
+        st.color = glm::vec3(1.0f);
+        st.texCoord = glm::vec2(t, 0.0f);
+        outVertices.push_back(st);
+
+        Vertex sb;
+        sb.pos = glm::vec3(radius * cx, -halfH, radius * cz);
+        sb.color = glm::vec3(1.0f);
+        sb.texCoord = glm::vec2(t, 1.0f);
+        outVertices.push_back(sb);
+    }
+
+    // side indices (two triangles per segment)
+    for (int i = 0; i < segments; ++i) {
+        uint16_t i0 = sideStart + uint16_t(2 * i);
+        uint16_t i1 = sideStart + uint16_t(2 * i + 1);
+        uint16_t i2 = sideStart + uint16_t(2 * ((i + 1) % segments));
+        uint16_t i3 = sideStart + uint16_t(2 * ((i + 1) % segments) + 1);
+
+        outIndices.push_back(i0);
+        outIndices.push_back(i2);
+        outIndices.push_back(i1);
+
+        outIndices.push_back(i1);
+        outIndices.push_back(i2);
+        outIndices.push_back(i3);
+    }
+}
 
 std::vector<PointTextVertex> meteors(MAX_METEORS);
 
@@ -243,6 +339,14 @@ public:
         rotY[0] = 0.0f;
 
         scale[0] = 1.0f;
+
+        generateCylinder(
+            1.0f,
+            2.0f,
+            8,
+            vertices,
+            indices
+        );
 
         initWindow();
         initVulkan();
@@ -615,7 +719,6 @@ private:
             createInfo.pNext = (VkDebugUtilsMessengerCreateInfoEXT*) &debugCreateInfo;
         } else {
             createInfo.enabledLayerCount = 0;
-
             createInfo.pNext = nullptr;
         }
 
@@ -703,12 +806,8 @@ private:
         createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
         createInfo.ppEnabledExtensionNames = deviceExtensions.data();
 
-        if (enableValidationLayers) {
-            createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
-            createInfo.ppEnabledLayerNames = validationLayers.data();
-        } else {
-            createInfo.enabledLayerCount = 0;
-        }
+        createInfo.enabledLayerCount = 0;
+        createInfo.ppEnabledLayerNames = nullptr;
 
         if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) != VK_SUCCESS) {
             throw std::runtime_error("failed to create logical device!");
